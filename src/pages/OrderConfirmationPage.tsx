@@ -11,6 +11,7 @@ const OrderConfirmationPage: React.FC = () => {
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [showTimer, setShowTimer] = useState(true)
+  const [timeToReady, setTimeToReady] = useState<number | null>(null)
 
   // iOS-kompatibles Audioelement
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -109,6 +110,19 @@ const OrderConfirmationPage: React.FC = () => {
       }
     }
   }, [orderId])
+
+  useEffect(() => {
+    // Update remaining minutes every 30s when Bestellung bestätigt ist
+    if (order?.status === 'confirmed' && order.ready_at) {
+      const update = () => {
+        const diffMs = new Date(order.ready_at).getTime() - Date.now()
+        setTimeToReady(Math.max(0, Math.ceil(diffMs / 60000)))
+      }
+      update()
+      const t = setInterval(update, 30000)
+      return () => clearInterval(t)
+    }
+  }, [order?.status, order?.ready_at])
 
   const playNotificationSound = () => {
     // Versuche zuerst die vorgefertigte Audio-Datei (funktioniert besser auf Mobilgeräten)
@@ -217,6 +231,10 @@ const OrderConfirmationPage: React.FC = () => {
   }
 
   const statusInfo = getStatusMessage(order.status)
+  let statusMessage = statusInfo.message
+  if (order.status === 'confirmed' && order.ready_at && timeToReady !== null) {
+    statusMessage = `Ihre Bestellung ist in ca. ${timeToReady} Minuten fertig (≈ ${formatTime(order.ready_at)}).`
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -229,7 +247,7 @@ const OrderConfirmationPage: React.FC = () => {
             {statusInfo.title}
           </h1>
           <p className="text-gray-600">
-            {statusInfo.message}
+            {statusMessage}
           </p>
         </div>
 

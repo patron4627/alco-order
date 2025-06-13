@@ -28,17 +28,30 @@ const AdminPage: React.FC = () => {
     const unlockAudio = () => {
       if (audioUnlockedRef.current || !audioRef.current) return
       audioRef.current.volume = 0
-      audioRef.current.play().finally(() => {
+      audioRef.current.play().then(() => {
         audioRef.current!.pause()
         audioRef.current!.currentTime = 0
         audioRef.current!.volume = 1
         audioUnlockedRef.current = true
+      }).catch(() => {
+        // Fallback: Erstelle kurze Web-Audio-Biep um trotzdem AudioContext zu entsperren
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          gain.gain.value = 0
+          osc.start()
+          osc.stop(ctx.currentTime + 0.05)
+          audioUnlockedRef.current = true
+        } catch {}
       })
       window.removeEventListener('pointerdown', unlockAudio)
       window.removeEventListener('touchstart', unlockAudio)
       window.removeEventListener('click', unlockAudio)
     }
-    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('pointerdown', unlockAudio, { once: true, passive: true })
     window.addEventListener('touchstart', unlockAudio, { once: true })
     window.addEventListener('click', unlockAudio, { once: true })
 
@@ -182,7 +195,7 @@ const AdminPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center flex-wrap gap-2 sm:gap-4">
             {activeTab === 'orders' && (
               <>
                 <button
