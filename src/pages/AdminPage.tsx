@@ -12,7 +12,8 @@ const AdminPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
-  const [audioEnabled, setAudioEnabled] = useState(false)
+  // Audio-Benachrichtigungen standardmäßig aktivieren
+  const [audioEnabled, setAudioEnabled] = useState(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
 
   useEffect(() => {
@@ -20,45 +21,32 @@ const AdminPage: React.FC = () => {
 
     fetchOrders()
     
-    // Subscription für neue Bestellungen mit sofortigem Update
+    // Echtzeit-Subscription (INSERT / UPDATE / DELETE) für sofortige Updates
     const subscription = supabase
       .channel('admin-orders-realtime')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'orders' 
-        }, 
-        (payload) => {
-          console.log('Real-time order update:', payload)
-          
-          if (payload.eventType === 'INSERT') {
-            const newOrder = payload.new as Order
-            setOrders(prev => [newOrder, ...prev])
-            
-            // Sofortiger Ton bei neuer Bestellung
-            if (audioEnabled) {
-              playNotificationSound()
-            }
-            
-            // Browser Notification
-            if (Notification.permission === 'granted') {
-              new Notification('Neue Bestellung!', {
-                body: `${newOrder.customer_name} hat eine Bestellung aufgegeben`,
-                icon: '/icon-192x192.png'
-              })
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedOrder = payload.new as Order
-            setOrders(prev => prev.map(order => 
-              order.id === updatedOrder.id ? updatedOrder : order
-            ))
-          } else if (payload.eventType === 'DELETE') {
-            const deletedOrder = payload.old as Order
-            setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
-          }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
+        const newOrder = payload.new as Order
+        setOrders(prev => [newOrder, ...prev])
+
+        if (audioEnabled) {
+          playNotificationSound()
         }
-      )
+
+        if (Notification.permission === 'granted') {
+          new Notification('Neue Bestellung!', {
+            body: `${newOrder.customer_name} hat eine Bestellung aufgegeben`,
+            icon: '/icon-192x192.png'
+          })
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
+        const updatedOrder = payload.new as Order
+        setOrders(prev => prev.map(o => (o.id === updatedOrder.id ? updatedOrder : o)))
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'orders' }, (payload) => {
+        const deletedOrder = payload.old as Order
+        setOrders(prev => prev.filter(o => o.id !== deletedOrder.id))
+      })
       .subscribe()
 
     // Notification Permission anfragen
