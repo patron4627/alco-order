@@ -14,10 +14,29 @@ const OrderConfirmationPage: React.FC = () => {
 
   useEffect(() => {
     if (orderId) {
+      const fetchOrder = async () => {
+        if (!orderId) return
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .single()
+        if (!error && data) {
+          setOrder(data as Order)
+        }
+      }
+
+      // Initial fetch ensures wir haben die aktuellste Version
       fetchOrder()
-      
-      // Echtzeit-Subscription für Order-Updates
-      const subscription = supabase
+
+      // Fallback-Polling alle 7 Sekunden bis Bestellung nicht mehr 'pending' ist
+      let poll: NodeJS.Timeout | undefined
+      if (order?.status === 'pending') {
+        poll = setInterval(fetchOrder, 7000)
+      }
+
+      // Supabase-Realtime Subscription für Updates dieser Bestellung
+      const channel = supabase
         .channel(`order-${orderId}`)
         .on('postgres_changes', 
           { 
@@ -56,34 +75,11 @@ const OrderConfirmationPage: React.FC = () => {
       }
 
       return () => {
-        subscription.unsubscribe()
+        if (poll) clearInterval(poll)
+        channel.unsubscribe()
       }
     }
   }, [orderId])
-
-  const fetchOrder = async () => {
-    if (!orderId) return
-
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('id', orderId)
-        .single()
-
-      if (error) throw error
-      setOrder(data)
-      
-      // Timer nur anzeigen wenn Status noch pending ist
-      if (data.status !== 'pending') {
-        setShowTimer(false)
-      }
-    } catch (error) {
-      console.error('Error fetching order:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const playNotificationSound = () => {
     // Erstelle einen einfachen Benachrichtigungston

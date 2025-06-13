@@ -20,7 +20,12 @@ const AdminPage: React.FC = () => {
     if (!isAdminAuthenticated) return
 
     fetchOrders()
-    
+
+    // Fallback-Polling alle 7 Sekunden (falls Realtime nicht greift)
+    const poll = setInterval(() => {
+      fetchOrders()
+    }, 7000)
+
     // Echtzeit-Subscription (INSERT / UPDATE / DELETE) für sofortige Updates
     const subscription = supabase
       .channel('admin-orders-realtime')
@@ -55,6 +60,7 @@ const AdminPage: React.FC = () => {
     }
 
     return () => {
+      clearInterval(poll)
       subscription.unsubscribe()
     }
   }, [audioEnabled, isAdminAuthenticated])
