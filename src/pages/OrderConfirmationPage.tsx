@@ -23,7 +23,7 @@ const OrderConfirmationPage: React.FC = () => {
   useEffect(() => {
     if (orderId) {
       const fetchOrder = async () => {
-        if (!orderId) return
+        if (!orderId) return null
         const { data, error } = await supabase
           .from('orders')
           .select('*')
@@ -32,7 +32,9 @@ const OrderConfirmationPage: React.FC = () => {
         if (!error && data) {
           setOrder(data as Order)
           setLoading(false)
+          return data as Order
         }
+        return null
       }
 
       // Ref für Polling-Interval damit wir ihn stoppen können
@@ -51,8 +53,9 @@ const OrderConfirmationPage: React.FC = () => {
       }
 
       // Initial fetch & Poll-Entscheidung
-      await fetchOrder()
-      if (order) startOrStopPolling(order.status)
+      fetchOrder().then((initial) => {
+        if (initial) startOrStopPolling(initial.status)
+      })
 
       // Fallback-Polling alle 7 Sekunden bis Bestellung nicht mehr 'pending' ist
       // let poll: ReturnType<typeof setInterval> | undefined
