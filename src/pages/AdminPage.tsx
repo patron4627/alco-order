@@ -14,6 +14,8 @@ const AdminPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
   // Audio-Benachrichtigungen standardmäßig aktivieren
   const [audioEnabled, setAudioEnabled] = useState(true)
+  // Flag, ob Audio durch Nutzer-Geste entsperrt wurde (iOS / Mobile Safari)
+  const audioUnlockedRef = useRef(false)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   // HTMLAudioElement für iOS-kompatiblen Ton
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -21,6 +23,30 @@ const AdminPage: React.FC = () => {
   useEffect(() => {
     // Audio-Datei im Public-Ordner
     audioRef.current = new Audio('/notification.mp3')
+
+    // Einmalige Geste zum Entsperren des Audio-Kontexts abwarten
+    const unlockAudio = () => {
+      if (audioUnlockedRef.current || !audioRef.current) return
+      audioRef.current.volume = 0
+      audioRef.current.play().finally(() => {
+        audioRef.current!.pause()
+        audioRef.current!.currentTime = 0
+        audioRef.current!.volume = 1
+        audioUnlockedRef.current = true
+      })
+      window.removeEventListener('pointerdown', unlockAudio)
+      window.removeEventListener('touchstart', unlockAudio)
+      window.removeEventListener('click', unlockAudio)
+    }
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('touchstart', unlockAudio, { once: true })
+    window.addEventListener('click', unlockAudio, { once: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio)
+      window.removeEventListener('touchstart', unlockAudio)
+      window.removeEventListener('click', unlockAudio)
+    }
   }, [])
 
   useEffect(() => {

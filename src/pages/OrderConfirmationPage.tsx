@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { CheckCircle, Clock, Phone, User, Home } from 'lucide-react'
 import { Order } from '../types'
@@ -11,6 +11,14 @@ const OrderConfirmationPage: React.FC = () => {
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [showTimer, setShowTimer] = useState(true)
+
+  // iOS-kompatibles Audioelement
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  // Beim ersten Rendern Audiodatei laden
+  useEffect(() => {
+    audioRef.current = new Audio('/notification.mp3')
+  }, [])
 
   useEffect(() => {
     if (orderId) {
@@ -27,14 +35,30 @@ const OrderConfirmationPage: React.FC = () => {
         }
       }
 
-      // Initial fetch ensures wir haben die aktuellste Version
-      fetchOrder()
+      // Ref für Polling-Interval damit wir ihn stoppen können
+      const pollRef: { current: ReturnType<typeof setInterval> | null } = { current: null }
+
+      // Hilfsfunktion zum Start/Stop Polling anhand Order-Status
+      const startOrStopPolling = (status: Order['status']) => {
+        if (status === 'pending') {
+          if (!pollRef.current) {
+            pollRef.current = setInterval(fetchOrder, 7000)
+          }
+        } else if (pollRef.current) {
+          clearInterval(pollRef.current)
+          pollRef.current = null
+        }
+      }
+
+      // Initial fetch & Poll-Entscheidung
+      await fetchOrder()
+      if (order) startOrStopPolling(order.status)
 
       // Fallback-Polling alle 7 Sekunden bis Bestellung nicht mehr 'pending' ist
-      let poll: ReturnType<typeof setInterval> | undefined
-      if (order?.status === 'pending') {
-        poll = setInterval(fetchOrder, 7000)
-      }
+      // let poll: ReturnType<typeof setInterval> | undefined
+      // if (order?.status === 'pending') {
+      //   poll = setInterval(fetchOrder, 7000)
+      // }
 
       // Supabase-Realtime Subscription für Updates dieser Bestellung
       const channel = supabase
@@ -51,6 +75,8 @@ const OrderConfirmationPage: React.FC = () => {
             const updatedOrder = payload.new as Order
             setOrder(updatedOrder)
             setLoading(false)
+            // Polling nach Status anpassen
+            startOrStopPolling(updatedOrder.status)
             // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
             if (updatedOrder.status !== 'pending') {
               setShowTimer(false)
@@ -75,30 +101,34 @@ const OrderConfirmationPage: React.FC = () => {
       }
 
       return () => {
-        if (poll) clearInterval(poll)
+        if (pollRef.current) clearInterval(pollRef.current)
         channel.unsubscribe()
       }
     }
   }, [orderId])
 
   const playNotificationSound = () => {
-    // Erstelle einen einfachen Benachrichtigungston
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1)
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
-    
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
-    
-    oscillator.start(audioContext.currentTime)
-    oscillator.stop(audioContext.currentTime + 0.3)
+    // Versuche zuerst die vorgefertigte Audio-Datei (funktioniert besser auf Mobilgeräten)
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(() => {
+        // Fallback: kurzer Web-Audio Biep
+        try {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+          oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+          oscillator.start()
+          oscillator.stop(audioContext.currentTime + 0.3)
+        } catch (err) {
+          console.error('AudioContext error:', err)
+        }
+      })
+    }
   }
 
   const formatTime = (timeString: string) => {
