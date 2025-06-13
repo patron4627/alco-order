@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
@@ -15,6 +15,13 @@ const AdminPage: React.FC = () => {
   // Audio-Benachrichtigungen standardmäßig aktivieren
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
+  // HTMLAudioElement für iOS-kompatiblen Ton
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    // Audio-Datei im Public-Ordner
+    audioRef.current = new Audio('/notification.mp3')
+  }, [])
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
@@ -40,7 +47,7 @@ const AdminPage: React.FC = () => {
         if (Notification.permission === 'granted') {
           new Notification('Neue Bestellung!', {
             body: `${newOrder.customer_name} hat eine Bestellung aufgegeben`,
-            icon: '/icon-192x192.png'
+            // icon intentionally omitted to avoid 404
           })
         }
       })
@@ -82,28 +89,26 @@ const AdminPage: React.FC = () => {
   }
 
   const playNotificationSound = () => {
-    try {
-      // Erstelle einen professionellen Benachrichtigungston
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      
-      // Melodischer Ton für neue Bestellungen
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3)
-      
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
-    } catch (error) {
-      console.log('Could not play notification sound:', error)
+    // Versuche zuerst HTMLAudio (funktioniert in iOS nach erstem Nutzer-Tippen)
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(() => {
+        // Fallback Web-Audio
+        try {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+          oscillator.frequency.setValueAtTime(880, audioContext.currentTime)
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+          oscillator.start()
+          oscillator.stop(audioContext.currentTime + 0.3)
+        } catch (err) {
+          console.log('Sound failed', err)
+        }
+      })
     }
   }
 

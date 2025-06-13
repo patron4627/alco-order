@@ -23,6 +23,7 @@ const OrderConfirmationPage: React.FC = () => {
           .single()
         if (!error && data) {
           setOrder(data as Order)
+          setLoading(false)
         }
       }
 
@@ -30,7 +31,7 @@ const OrderConfirmationPage: React.FC = () => {
       fetchOrder()
 
       // Fallback-Polling alle 7 Sekunden bis Bestellung nicht mehr 'pending' ist
-      let poll: NodeJS.Timeout | undefined
+      let poll: ReturnType<typeof setInterval> | undefined
       if (order?.status === 'pending') {
         poll = setInterval(fetchOrder, 7000)
       }
@@ -49,7 +50,7 @@ const OrderConfirmationPage: React.FC = () => {
             console.log('Order update received:', payload)
             const updatedOrder = payload.new as Order
             setOrder(updatedOrder)
-            
+            setLoading(false)
             // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
             if (updatedOrder.status !== 'pending') {
               setShowTimer(false)
@@ -58,7 +59,6 @@ const OrderConfirmationPage: React.FC = () => {
               if (Notification.permission === 'granted') {
                 new Notification('Bestellung bestätigt!', {
                   body: `Ihre Bestellung wurde bestätigt und wird zubereitet.`,
-                  icon: '/icon-192x192.png'
                 })
               }
               
