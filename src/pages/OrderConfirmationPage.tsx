@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { Order } from '../types'
 import { playNotificationSound } from '../utils/audio'
 import { User, Phone, Clock, Home } from 'lucide-react'
+import OrderTimer from '../components/OrderTimer'
 
 interface CartItem {
   name: string
@@ -18,7 +19,9 @@ interface ExtendedOrder extends Order {
 const OrderConfirmationPage: React.FC = () => {
   const [order, setOrder] = useState<ExtendedOrder | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const [showTimer, setShowTimer] = useState(false)
+  const [timeToReady, setTimeToReady] = useState(10 * 60) // 10 Minuten in Sekunden
+  const [error, setError] = useState<string | null>(null)
   const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
 
@@ -40,9 +43,10 @@ const OrderConfirmationPage: React.FC = () => {
         if (!data) throw new Error('Order not found')
 
         setOrder(data as ExtendedOrder)
+        setShowTimer(true)
         setLoading(false)
       } catch (err) {
-        setError(err as Error)
+        setError('Fehler beim Laden der Bestellung')
         setLoading(false)
       }
     }
@@ -102,7 +106,7 @@ const OrderConfirmationPage: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-500">Fehler: {error.message}</p>
+          <p className="text-red-500">Fehler: {error}</p>
           <button
             onClick={() => navigate('/home')}
             className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -160,6 +164,13 @@ const OrderConfirmationPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {showTimer && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold mb-4">Bereitstellungszeit:</h2>
+              <OrderTimer timeToReady={timeToReady} />
+            </div>
+          )}
 
           <div className="mb-8">
             <h2 className="text-xl font-semibold mb-4">Bestellstatus:</h2>

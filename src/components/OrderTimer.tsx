@@ -1,21 +1,18 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, FC } from 'react'
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 
 interface OrderTimerProps {
-  orderId: string
-  onConfirmation: () => void
+  timeToReady: number
 }
 
-const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
-  const [timeLeft, setTimeLeft] = useState(600) // 10 Minuten in Sekunden
-  const [isConfirmed, setIsConfirmed] = useState(false)
+const OrderTimer: FC<OrderTimerProps> = ({ timeToReady }: OrderTimerProps) => {
+  const [timeLeft, setTimeLeft] = useState<number>(timeToReady)
 
   useEffect(() => {
-    if (timeLeft <= 0 || isConfirmed) return
+    if (timeLeft <= 0) return
 
     const timer = setInterval(() => {
-      setTimeLeft(prev => {
+      setTimeLeft((prev: number) => {
         if (prev <= 1) {
           clearInterval(timer)
           return 0
@@ -25,62 +22,12 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [timeLeft, isConfirmed])
-
-  useEffect(() => {
-    // Echtzeit-Subscription für Order-Status-Updates
-    const subscription = supabase
-      .channel(`timer-${orderId}`)
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'orders',
-          filter: `id=eq.${orderId}`
-        }, 
-        (payload) => {
-          const updatedOrder = payload.new as any
-          if (updatedOrder.status !== 'pending') {
-            setIsConfirmed(true)
-            onConfirmation()
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [orderId, onConfirmation])
+  }, [timeLeft])
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
-  }
-
-  const getProgressPercentage = () => {
-    return ((600 - timeLeft) / 600) * 100
-  }
-
-  if (isConfirmed) {
-    return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6 animate-pulse">
-        <div className="flex items-center space-x-3">
-          <div className="flex-shrink-0">
-            <CheckCircle className="w-8 h-8 text-green-500" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-green-900">
-              🎉 Bestellung bestätigt!
-            </h3>
-            <p className="text-green-700">
-              Ihre Bestellung wurde vom Restaurant bestätigt und wird zubereitet.
-            </p>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   if (timeLeft <= 0) {
