@@ -17,6 +17,10 @@ const AdminPage: React.FC = () => {
   const audioUnlockedRef = useRef(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  const getStatusCount = (status: Order['status']): number => {
+    return orders.filter(order => order.status === status).length
+  }
+
   // Überprüfe, ob der Benutzer authentifiziert ist
   if (!isAdminAuthenticated) {
     return <AdminLogin />
@@ -109,8 +113,8 @@ const AdminPage: React.FC = () => {
   }, [isAdminAuthenticated, audioEnabled])
 
   const filteredOrders = orders.filter((order) => {
-    if (activeTab === 'all') return true
-    return order.status === activeTab
+    if (statusFilter === 'all') return true
+    return order.status === statusFilter
   })
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
@@ -139,6 +143,16 @@ const AdminPage: React.FC = () => {
             <div className="flex">
               <div className="flex-shrink-0 flex items-center">
                 <span className="text-xl font-bold text-gray-900">Admin Dashboard</span>
+              </div>
+              <div className="ml-4 space-x-2">
+                <button
+                  onClick={() => setStatusFilter('ready')}
+                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                    statusFilter === 'ready'
+                      ? 'bg-gray-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
                   Bereit ({getStatusCount('ready')})
                 </button>
 
@@ -154,8 +168,35 @@ const AdminPage: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      </nav>
 
-            {/* Orders List */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Bestellungen</h1>
+          <div className="flex space-x-4">
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'orders' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              Bestellungen
+            </button>
+            <button
+              onClick={() => setActiveTab('menu')}
+              className={`px-4 py-2 rounded-lg ${
+                activeTab === 'menu' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              Menü
+            </button>
+          </div>
+        </div>
+
+        {activeTab === 'orders' ? (
+          <div className="bg-white shadow rounded-lg p-6">
             {filteredOrders.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-gray-400 mb-4">
@@ -182,7 +223,7 @@ const AdminPage: React.FC = () => {
                 ))}
               </div>
             )}
-          </>
+          </div>
         ) : (
           <MenuManagement />
         )}
