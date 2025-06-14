@@ -142,14 +142,24 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
       <div className="border-t pt-4 mb-4">
         <h4 className="font-medium text-gray-900 mb-2">Bestellte Artikel:</h4>
-        <div className="space-y-1">
-          {order.items.map((item, index) => (
-            <div key={index} className="flex justify-between text-sm">
+        {order.items.map((item, index) => (
+          <div key={index} className="space-y-2">
+            <div className="flex justify-between text-sm font-medium">
               <span>{item.quantity}x {item.name}</span>
               <span>{(item.price * item.quantity).toFixed(2)}€</span>
             </div>
-          ))}
-        </div>
+            {item.options && item.options.length > 0 && (
+              <div className="ml-4 space-y-1 text-sm text-gray-600">
+                {item.options.map((option, optIndex) => (
+                  <div key={optIndex} className="flex items-center space-x-2">
+                    <span>•</span>
+                    <span>{option.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       {order.notes && (
