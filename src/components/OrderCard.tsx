@@ -41,42 +41,12 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const handleStatusUpdate = async (newStatus: Order['status']) => {
     try {
-      // Wenn wir eine neue Bestellung bestätigen, Frage nach Zubereitungszeit
-      if (newStatus === 'confirmed') {
-        const minutesStr = prompt('In wie vielen Minuten ist das Essen fertig?', '15')
-        if (minutesStr === null) return // Abgebrochen
-        const minutes = parseInt(minutesStr, 10)
-        if (isNaN(minutes) || minutes <= 0) return alert('Bitte eine gültige Zahl eingeben')
-
-        const readyAt = new Date(Date.now() + minutes * 60000).toISOString()
-
-        // 1) Status auf "confirmed" setzen und Zeit speichern
-        const { error } = await supabase
-          .from('orders')
-          .update({ status: 'confirmed', ready_at: readyAt })
-          .eq('id', order.id)
-
-        if (error) throw error
-
-        // 2) Nach Ablauf der Zeit automatisch auf "ready" setzen
-        setTimeout(async () => {
-          try {
-            await supabase
-              .from('orders')
-              .update({ status: 'ready' })
-              .eq('id', order.id)
-          } catch (err) {
-            console.error('Error auto-setting ready status:', err)
-          }
-        }, minutes * 60000)
-      } else {
-        // Für alle anderen Statusänderungen (ready ➜ completed)
-        const { error } = await supabase
-          .from('orders')
-          .update({ status: newStatus })
-          .eq('id', order.id)
-        if (error) throw error
-      }
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', order.id)
+      
+      if (error) throw error
 
       if (onStatusUpdate) {
         onStatusUpdate(order.id, newStatus)

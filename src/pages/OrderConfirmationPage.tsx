@@ -168,7 +168,7 @@ const OrderConfirmationPage: React.FC = () => {
           {showTimer && (
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4">Bereitstellungszeit:</h2>
-              <OrderTimer timeToReady={timeToReady} />
+              <OrderTimer timeToReady={timeToReady} orderId={order.id} />
             </div>
           )}
 

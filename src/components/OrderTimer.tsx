@@ -1,12 +1,21 @@
-import React, { useState, useEffect, FC } from 'react'
+import React from 'react'
+import { useState, useEffect } from 'react'
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { JSX } from 'react/jsx-runtime'
 
 interface OrderTimerProps {
   timeToReady: number
+  orderId: string
 }
 
-const OrderTimer: FC<OrderTimerProps> = ({ timeToReady }: OrderTimerProps) => {
+const getProgressPercentage = (timeLeft: number, totalTime: number): number => {
+  const progress = ((totalTime - timeLeft) / totalTime) * 100
+  return Math.min(Math.max(progress, 0), 100)
+}
+
+const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
   const [timeLeft, setTimeLeft] = useState<number>(timeToReady)
+  const totalTime = timeToReady
 
   useEffect(() => {
     if (timeLeft <= 0) return
@@ -76,7 +85,7 @@ const OrderTimer: FC<OrderTimerProps> = ({ timeToReady }: OrderTimerProps) => {
       <div className="w-full bg-blue-200 rounded-full h-3 mb-4">
         <div 
           className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-1000 ease-linear"
-          style={{ width: `${getProgressPercentage()}%` }}
+          style={{ width: `${getProgressPercentage(timeLeft, totalTime)}%` }}
         />
       </div>
 

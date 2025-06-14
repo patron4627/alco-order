@@ -6,6 +6,7 @@ import OrderCard from '../components/OrderCard'
 import AdminLogin from '../components/AdminLogin'
 import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
+import '../styles/animations.css'
 
 const AdminPage: React.FC = () => {
   const { isAdminAuthenticated, logout } = useAuth()
@@ -191,6 +192,25 @@ const AdminPage: React.FC = () => {
               }`}
             >
               Menü
+            </button>
+            <button
+              onClick={() => setAudioEnabled(!audioEnabled)}
+              className={`px-4 py-2 rounded-lg ${
+                audioEnabled ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+              title="Benachrichtigungston an/aus"
+            >
+              <Bell className={`w-5 h-5 ${audioEnabled ? 'animate-bell' : ''}`} />
+            </button>
+            <button
+              onClick={() => {
+                fetchOrders()
+                setStatusFilter('all')
+              }}
+              className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+              title="Bestellungen aktualisieren"
+            >
+              <RefreshCw className="w-5 h-5 animate-spin-slow" />
             </button>
           </div>
         </div>
