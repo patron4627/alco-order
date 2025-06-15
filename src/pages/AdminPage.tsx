@@ -2,9 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
-import OrderCard from '../components/OrderCard'
-import AdminLogin from '../components/AdminLogin'
-import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
 
 const AdminPage: React.FC = () => {
@@ -12,7 +9,7 @@ const AdminPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
-  const [audioEnabled, setAudioEnabled] = useState(true) // Standardmäßig aktiviert
+  const [audioEnabled, setAudioEnabled] = useState(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
 
   useEffect(() => {
@@ -81,93 +78,36 @@ const AdminPage: React.FC = () => {
     return () => clearInterval(interval)
   }, [isAdminAuthenticated])
 
-  const fetchOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      setOrders(data || [])
-    } catch (error) {
-      console.error('Error fetching orders:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      setOrders(data || [])
-            }
-          } catch (error) {
-            console.error('Error updating orders:', error)
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Admin subscription status:', status)
-      })
-
-    // Notification Permission anfragen
-    if (Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-
-    return () => {
-      console.log('🔌 Admin: Unsubscribing from orders')
-      supabase.removeChannel(channel)
-    }
-  }, [audioEnabled, isAdminAuthenticated])
-
-  const fetchOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      setOrders(data || [])
-    } catch (error) {
-      console.error('Error fetching orders:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  // Funktion zum Abspielen eines neuen Bestellungs-Tons
   const playNewOrderSound = () => {
+    if (!audioEnabled) return
+
+    const audio = new Audio('/sounds/new-order.mp3')
+    audio.play()
+      .catch(error => console.error('Error playing sound:', error))
+  }
+
+  // Hauptfunktion zum Laden der Bestellungen
+  const fetchOrders = async () => {
     try {
-      // Professioneller Benachrichtigungston für neue Bestellungen
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      
-      // Aufmerksamkeitsstarker Ton für neue Bestellungen
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.4)
-      
-      gainNode.gain.setValueAtTime(0.4, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.6)
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setOrders(data || [])
     } catch (error) {
-      console.log('Could not play notification sound:', error)
+      console.error('Error fetching orders:', error)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  // Notification Permission anfragen
+  if (Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
   }
 
   const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
@@ -184,10 +124,12 @@ const AdminPage: React.FC = () => {
     return <AdminLogin />
   }
 
+  // Filter orders based on status
   const filteredOrders = statusFilter === 'all' 
     ? orders 
     : orders.filter(order => order.status === statusFilter)
 
+  // Get count of orders with specific status
   const getStatusCount = (status: Order['status']) => {
     return orders.filter(order => order.status === status).length
   }
