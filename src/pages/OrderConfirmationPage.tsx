@@ -57,8 +57,7 @@ const OrderConfirmationPage: React.FC = () => {
   useEffect(() => {
     if (!order) return
 
-    // Subscribe to order updates
-    const orderChannel = supabase
+    let orderChannel = supabase
       .channel('order-updates')
       .on('postgres_changes', {
         event: '*',
@@ -68,14 +67,14 @@ const OrderConfirmationPage: React.FC = () => {
       }, (payload) => {
         const updatedOrder = payload.new as ExtendedOrder
         setOrder(updatedOrder)
-        if (updatedOrder.status === 'ready') {
+        if (updatedOrder.status === 'confirmed') {
           playNotificationSound()
+          alert('🎉 Ihre Bestellung wurde bestätigt und wird zubereitet!')
         }
       })
       .subscribe()
 
-    // Subscribe to notifications
-    const notificationChannel = supabase
+    let notificationChannel = supabase
       .channel('notifications')
       .on('postgres_changes', {
         event: '*',
@@ -90,6 +89,11 @@ const OrderConfirmationPage: React.FC = () => {
             .from('notifications')
             .update({ read: true })
             .eq('id', notification.id)
+            .then(({ error }) => {
+              if (error) {
+                console.error('Error marking notification as read:', error)
+              }
+            })
 
           // Show notification to customer
           alert(notification.message)
@@ -98,8 +102,14 @@ const OrderConfirmationPage: React.FC = () => {
       .subscribe()
 
     return () => {
-      orderChannel.unsubscribe()
-      notificationChannel.unsubscribe()
+      if (orderChannel) {
+        orderChannel.unsubscribe()
+        orderChannel = null
+      }
+      if (notificationChannel) {
+        notificationChannel.unsubscribe()
+        notificationChannel = null
+      }
     }
   }, [order])
 
@@ -112,6 +122,20 @@ const OrderConfirmationPage: React.FC = () => {
 
       if (error) throw error
       setOrder(prev => prev ? { ...prev, status: 'completed' } : null)
+      
+      // Send confirmation notification
+      await supabase
+        .from('notifications')
+        .insert({
+          order_id: order.id,
+          message: 'Ihre Bestellung wurde als abgeholt markiert.',
+          type: 'order_status'
+        })
+        .then(({ error }) => {
+          if (error) {
+            console.error('Error sending confirmation notification:', error)
+          }
+        })
     } catch (err) {
       setError(err as Error)
     }
