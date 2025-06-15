@@ -88,6 +88,7 @@ const AdminPage: React.FC = () => {
           event: '*',
           schema: 'public',
           table: 'orders',
+          filter: 'status=eq.confirmed OR status=eq.completed'
         },
         (payload: { new: Order }) => {
           if (payload.new) {

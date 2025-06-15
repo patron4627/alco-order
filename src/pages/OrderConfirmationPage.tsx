@@ -57,7 +57,7 @@ const OrderConfirmationPage: React.FC = () => {
   useEffect(() => {
     if (!order) return
 
-    let orderChannel = supabase
+    const orderChannel = supabase
       .channel('order-updates')
       .on('postgres_changes', {
         event: '*',
@@ -69,12 +69,11 @@ const OrderConfirmationPage: React.FC = () => {
         setOrder(updatedOrder)
         if (updatedOrder.status === 'confirmed') {
           playNotificationSound()
-          alert('🎉 Ihre Bestellung wurde bestätigt und wird zubereitet!')
         }
       })
       .subscribe()
 
-    let notificationChannel = supabase
+    const notificationChannel = supabase
       .channel('notifications')
       .on('postgres_changes', {
         event: '*',
@@ -89,11 +88,7 @@ const OrderConfirmationPage: React.FC = () => {
             .from('notifications')
             .update({ read: true })
             .eq('id', notification.id)
-            .then(({ error }) => {
-              if (error) {
-                console.error('Error marking notification as read:', error)
-              }
-            })
+            .catch(error => console.error('Error marking notification as read:', error))
 
           // Show notification to customer
           alert(notification.message)
@@ -102,14 +97,8 @@ const OrderConfirmationPage: React.FC = () => {
       .subscribe()
 
     return () => {
-      if (orderChannel) {
-        orderChannel.unsubscribe()
-        orderChannel = null
-      }
-      if (notificationChannel) {
-        notificationChannel.unsubscribe()
-        notificationChannel = null
-      }
+      orderChannel.unsubscribe()
+      notificationChannel.unsubscribe()
     }
   }, [order])
 
