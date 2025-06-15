@@ -1,27 +1,77 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { useParams, useNavigate } from 'react-router-dom'
+import { CheckCircle, Clock, Phone, User, Home } from 'lucide-react'
 import { Order } from '../types'
-import { playNotificationSound } from '../utils/audio'
+import { supabase } from '../lib/supabase'
+import OrderTimer from '../components/OrderTimer'
 
-interface CartItem {
-  name: string
-  quantity: number
-  price: number
-}
-
-interface ExtendedOrder extends Order {
-  time_to_ready?: number
-}
-
-const OrderConfirmationPage = () => {
-  const { orderId } = useParams()
+const OrderConfirmationPage: React.FC = () => {
+  const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
-  const [order, setOrder] = useState<ExtendedOrder | null>(null)
+  const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [showTimer, setShowTimer] = useState(true)
+
+  useEffect(() => {
+    if (orderId) {
+      fetchOrder()
+      
+      // Echtzeit-Subscription für Bestellung
+      const channel = supabase
+        .channel(`order-updates-${orderId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'orders',
+            filter: `id=eq.${orderId}`
+          }, 
+          async (payload) => {
+            console.log('🔄 Order update received:', payload)
+            
+            try {
+              await fetchOrder() // Aktualisiere die gesamte Bestellung
+              
+              // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
+              if (order?.status !== 'pending') {
+                setShowTimer(false)
+                
+                // Browser-Benachrichtigung
+                if (Notification.permission === 'granted') {
+                  new Notification('🎉 Bestellung bestätigt!', {
+                    body: `Ihre Bestellung wurde bestätigt und wird zubereitet.`,
+                    icon: '/icon-192x192.png',
+                    tag: 'order-confirmed'
+                  })
+                }
+                
+                // Akustisches Signal
+                playNotificationSound()
+              }
+            } catch (error) {
+              console.error('Error updating order:', error)
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log('📡 Subscription status:', status)
+        })
+
+      // Notification Permission anfragen
+      if (Notification.permission === 'default') {
+        Notification.requestPermission()
+      }
+
+      return () => {
+        console.log('🔌 Unsubscribing from order updates')
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [orderId])
 
   const fetchOrder = async () => {
+    if (!orderId) return
+
     try {
       const { data, error } = await supabase
         .from('orders')
@@ -30,83 +80,105 @@ const OrderConfirmationPage = () => {
         .single()
 
       if (error) throw error
-
-      if (!data) {
-        console.error('Order not found:', orderId)
-        throw new Error('Bestellung nicht gefunden')
+      setOrder(data)
+      
+      // Timer nur anzeigen wenn Status noch pending ist
+      if (data.status !== 'pending') {
+        setShowTimer(false)
       }
-
-      setOrder(data as ExtendedOrder)
-    } catch (err) {
-      console.error('Error in fetchOrder:', err)
-      setError(err instanceof Error ? err.message : 'Fehler beim Laden der Bestellung')
+    } catch (error) {
+      console.error('Error fetching order:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    if (!orderId) return
-    fetchOrder()
-  }, [orderId, navigate])
-
-  const handleConfirmation = async () => {
+  const playNotificationSound = () => {
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'completed' })
-        .eq('id', order?.id)
-
-      if (error) throw error
-
-      await supabase
-        .from('notifications')
-        .insert({
-          order_id: order?.id,
-          message: 'Ihre Bestellung wurde erfolgreich abgeschlossen.',
-          read: false
-        })
-    } catch (err) {
-      console.error('Error confirming order:', err)
-      alert('Fehler beim Abschließen der Bestellung')
+      // Erstelle einen professionellen Bestätigungston
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      // Freudiger Bestätigungston
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.1)
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.2)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.3)
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
+    } catch (error) {
+      console.log('Could not play notification sound:', error)
     }
+  }
+
+  const formatTime = (timeString: string) => {
+    const date = new Date(timeString)
+    return date.toLocaleString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  const getStatusMessage = (status: Order['status']) => {
+    switch (status) {
+      case 'pending':
+        return {
+          title: 'Bestellung eingegangen!',
+          message: 'Ihre Bestellung wird bearbeitet. Sie erhalten eine Bestätigung, sobald sie bereit ist.',
+          color: 'text-yellow-600',
+          bgColor: 'bg-yellow-100'
+        }
+      case 'confirmed':
+        return {
+          title: '🎉 Bestellung bestätigt!',
+          message: 'Ihre Bestellung wird zubereitet und ist pünktlich zur Abholzeit fertig.',
+          color: 'text-blue-600',
+          bgColor: 'bg-blue-100'
+        }
+      case 'ready':
+        return {
+          title: '✅ Bestellung ist bereit!',
+          message: 'Ihre Bestellung ist fertig und kann abgeholt werden.',
+          color: 'text-green-600',
+          bgColor: 'bg-green-100'
+        }
+      case 'completed':
+        return {
+          title: '👍 Bestellung abgeholt!',
+          message: 'Vielen Dank für Ihren Besuch. Wir freuen uns auf Ihren nächsten Besuch!',
+          color: 'text-gray-600',
+          bgColor: 'bg-gray-100'
+        }
+      default:
+        return {
+          title: 'Bestellung eingegangen!',
+          message: 'Ihre Bestellung wird bearbeitet.',
+          color: 'text-gray-600',
+          bgColor: 'bg-gray-100'
+        }
+    }
+  }
+
+  const handleConfirmation = () => {
+    setShowTimer(false)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Lade Bestellung...</p>
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mt-4"></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center p-6 bg-white rounded-lg shadow-md">
-          <div className="mb-4">
-            <p className="text-red-500 font-semibold mb-2">Fehler beim Laden der Bestellung</p>
-            <p className="text-gray-600 text-sm">{error}</p>
-          </div>
-          <button
-            onClick={() => {
-              setError(null)
-              setLoading(true)
-              fetchOrder()
-            }}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mr-2"
-          >
-            Neu laden
-          </button>
-          <button
-            onClick={() => navigate('/home')}
-            className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-          >
-            Zurück zur Startseite
-          </button>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Bestellung wird geladen...</p>
         </div>
       </div>
     )
@@ -114,73 +186,135 @@ const OrderConfirmationPage = () => {
 
   if (!order) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Bestellung nicht gefunden</p>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Bestellung nicht gefunden</h1>
+          <p className="text-gray-600 mb-6">Die angegebene Bestellung existiert nicht.</p>
           <button
-            onClick={() => navigate('/home')}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={() => navigate('/')}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
           >
-            Zurück zur Startseite
+            Zur Startseite
           </button>
         </div>
       </div>
     )
   }
 
+  const statusInfo = getStatusMessage(order.status)
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h1 className="text-2xl font-bold mb-4">Bestellbestätigung</h1>
-          <div className="mb-6">
-            <p className="text-gray-600">Bestellnummer: {order.id}</p>
-            <p className="text-gray-600">Bestelldatum: {new Date(order.pickup_time).toLocaleString()}</p>
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center mb-8">
+          <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full ${statusInfo.bgColor} mb-4`}>
+            <CheckCircle className={`w-8 h-8 ${statusInfo.color}`} />
           </div>
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold mb-2">Bestellpositionen</h2>
-            <div className="space-y-2">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            {statusInfo.title}
+          </h1>
+          <p className="text-gray-600">
+            {statusInfo.message}
+          </p>
+        </div>
+
+        {/* Timer Component - nur anzeigen wenn Status pending ist */}
+        {showTimer && order.status === 'pending' && orderId && (
+          <div className="mb-8">
+            <OrderTimer 
+              orderId={orderId} 
+              onConfirmation={handleConfirmation}
+            />
+          </div>
+        )}
+
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Bestelldetails</h2>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2 text-sm">
+                  <User className="w-4 h-4 text-gray-500" />
+                  <span>{order.customer_name}</span>
+                </div>
+                <div className="flex items-center space-x-2 text-sm">
+                  <Phone className="w-4 h-4 text-gray-500" />
+                  <span>{order.customer_phone}</span>
+                </div>
+                <div className="flex items-center space-x-2 text-sm">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <span>Abholung: {formatTime(order.pickup_time)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Bestellnummer</h3>
+              <div className="bg-gray-100 rounded-lg p-4">
+                <p className="text-2xl font-mono font-bold text-center">
+                  #{order.id.slice(-6).toUpperCase()}
+                </p>
+                <p className="text-sm text-gray-600 text-center mt-1">
+                  Bestellung vom {formatTime(order.created_at)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Ihre Artikel</h3>
+            <div className="space-y-3">
               {order.items.map((item, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <span>{item.name}</span>
-                  <span>{item.quantity} x {item.price.toFixed(2)}€</span>
+                <div key={index} className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <span className="font-medium">{item.quantity}x {item.name}</span>
+                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                      <div className="text-sm text-gray-600 ml-4 mt-1">
+                        {item.selectedOptions.map((option, optIndex) => (
+                          <div key={optIndex} className="flex justify-between">
+                            <span>+ {option.name}</span>
+                            <span>+{option.price.toFixed(2)}€</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <span className="text-sm text-gray-600 block">
+                      {item.price.toFixed(2)}€ pro Stück
+                    </span>
+                  </div>
+                  <span className="font-medium">
+                    {(item.price * item.quantity).toFixed(2)}€
+                  </span>
                 </div>
               ))}
-              <div className="border-t pt-2">
-                <div className="flex justify-between font-semibold">
-                  <span>Gesamtbetrag</span>
-                  <span>{order.total_amount.toFixed(2)}€</span>
-                </div>
+            </div>
+            <div className="border-t mt-4 pt-4">
+              <div className="flex justify-between items-center text-xl font-bold">
+                <span>Gesamtsumme:</span>
+                <span>{order.total_amount.toFixed(2)}€</span>
               </div>
+              <p className="text-sm text-gray-600 mt-1">
+                Barzahlung bei Abholung
+              </p>
             </div>
           </div>
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold mb-2">Bestellstatus</h2>
-            <div className="bg-blue-100 p-4 rounded">
-              <p className="text-blue-600">Ihre Bestellung wird gerade zubereitet...</p>
-              <div className="mt-2">
-                <div className="text-sm text-gray-600">
-                  Wenn Ihre Bestellung nicht innerhalb von 10 Minuten bestätigt wird, 
-                  erhalten Sie eine Benachrichtigung.
-                </div>
-              </div>
+
+          {order.notes && (
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Ihre Notizen</h3>
+              <p className="text-gray-600">{order.notes}</p>
             </div>
-          </div>
-          <div className="flex justify-between items-center">
-            <button
-              onClick={handleConfirmation}
-              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-              disabled={order.status !== 'confirmed'}
-            >
-              {order.status === 'confirmed' ? 'Bestellung abgeschlossen' : 'Warten auf Bestätigung...'}
-            </button>
-            <button
-              onClick={() => navigate('/home')}
-              className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-            >
-              Zurück zur Startseite
-            </button>
-          </div>
+          )}
+        </div>
+
+        <div className="text-center">
+          <button
+            onClick={() => navigate('/')}
+            className="inline-flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            <Home className="w-4 h-4" />
+            <span>Zurück zur Startseite</span>
+          </button>
         </div>
       </div>
     </div>

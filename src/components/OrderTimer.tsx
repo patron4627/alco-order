@@ -1,62 +1,21 @@
-import React from 'react'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { Order } from '../types'
-import { playNotificationSound } from '../utils/audio'
-import { useNavigate } from 'react-router-dom'
-import { JSX } from 'react/jsx-runtime'
 
 interface OrderTimerProps {
-  timeToReady: number
   orderId: string
+  onConfirmation: () => void
 }
 
-const getProgressPercentage = (timeLeft: number, totalTime: number): number => {
-  const progress = ((totalTime - timeLeft) / totalTime) * 100
-  return Math.min(Math.max(progress, 0), 100)
-}
-
-const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
-  const [timeLeft, setTimeLeft] = useState<number>(timeToReady)
-  const [orderStatus, setOrderStatus] = useState<Order['status']>('pending')
-  const [showConfirmation, setShowConfirmation] = useState(false)
-  const totalTime = timeToReady
-  const navigate = useNavigate()
+const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
+  const [timeLeft, setTimeLeft] = useState(600) // 10 Minuten in Sekunden
+  const [isConfirmed, setIsConfirmed] = useState(false)
 
   useEffect(() => {
-    // Subscribe to order status updates
-    const channel = supabase
-      .channel('order-updates')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'orders',
-        filter: `id=eq.${orderId}`
-      }, (payload) => {
-        const updatedOrder = payload.new as Order
-        setOrderStatus(updatedOrder.status)
-        
-        if (updatedOrder.status === 'confirmed') {
-          setShowConfirmation(true)
-          playNotificationSound()
-          
-          // Show confirmation message
-          alert('🎉 Ihre Bestellung wurde bestätigt und wird zubereitet!')
-        }
-      })
-      .subscribe()
-
-    return () => {
-      channel.unsubscribe()
-    }
-  }, [orderId])
-
-  useEffect(() => {
-    if (timeLeft <= 0) return
+    if (timeLeft <= 0 || isConfirmed) return
 
     const timer = setInterval(() => {
-      setTimeLeft((prev: number) => {
+      setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer)
           return 0
@@ -66,12 +25,71 @@ const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [timeLeft])
+  }, [timeLeft, isConfirmed])
+
+  useEffect(() => {
+    // Echtzeit-Subscription für Order-Status-Updates mit verbesserter Konfiguration
+    const channel = supabase
+      .channel(`timer-${orderId}`, {
+        config: {
+          broadcast: { self: true },
+          presence: { key: orderId }
+        }
+      })
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'orders',
+          filter: `id=eq.${orderId}`
+        }, 
+        (payload) => {
+          console.log('⏰ Timer: Order update received:', payload)
+          const updatedOrder = payload.new as any
+          if (updatedOrder.status !== 'pending') {
+            setIsConfirmed(true)
+            onConfirmation()
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Timer subscription status:', status)
+      })
+
+    return () => {
+      console.log('🔌 Timer: Unsubscribing')
+      supabase.removeChannel(channel)
+    }
+  }, [orderId, onConfirmation])
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
+  const getProgressPercentage = () => {
+    return ((600 - timeLeft) / 600) * 100
+  }
+
+  if (isConfirmed) {
+    return (
+      <div className="bg-green-50 border border-green-200 rounded-lg p-6 animate-bounce">
+        <div className="flex items-center space-x-3">
+          <div className="flex-shrink-0">
+            <CheckCircle className="w-8 h-8 text-green-500" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-green-900">
+              🎉 Bestellung bestätigt!
+            </h3>
+            <p className="text-green-700">
+              Ihre Bestellung wurde vom Restaurant bestätigt und wird zubereitet.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (timeLeft <= 0) {
@@ -95,36 +113,18 @@ const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
   }
 
   return (
-    <div>
-      {showConfirmation ? (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-          <div className="text-center mb-4">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-              <h3 className="text-lg font-semibold text-green-900">
-                🎉 Bestellung bestätigt!
-              </h3>
-            </div>
-            <p className="text-green-700 text-sm">
-              Ihre Bestellung wird zubereitet. Sie können die Seite nun schließen.
-            </p>
-          </div>
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 animate-pulse">
+      <div className="text-center mb-4">
+        <div className="flex items-center justify-center space-x-2 mb-2">
+          <Clock className="w-6 h-6 text-blue-600 animate-spin" />
+          <h3 className="text-lg font-semibold text-blue-900">
+            ⏳ Warten auf Bestätigung
+          </h3>
         </div>
-      ) : (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 animate-pulse">
-          <div className="text-center mb-4">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <Clock className="w-6 h-6 text-blue-600 animate-spin" />
-              <h3 className="text-lg font-semibold text-blue-900">
-                ⏳ Warten auf Bestätigung
-              </h3>
-            </div>
-            <p className="text-blue-700 text-sm">
-              Bitte bleiben Sie auf dieser Seite. Sie erhalten eine sofortige Benachrichtigung, sobald Ihre Bestellung bestätigt wird.
-            </p>
-          </div>
-        </div>
-      )}
+        <p className="text-blue-700 text-sm">
+          Bitte bleiben Sie auf dieser Seite. Sie erhalten eine sofortige Benachrichtigung, sobald Ihre Bestellung bestätigt wird.
+        </p>
+      </div>
 
       <div className="text-center mb-4">
         <div className="text-4xl font-bold text-blue-900 mb-2 font-mono">
@@ -138,7 +138,7 @@ const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
       <div className="w-full bg-blue-200 rounded-full h-3 mb-4">
         <div 
           className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-1000 ease-linear"
-          style={{ width: `${getProgressPercentage(timeLeft, totalTime)}%` }}
+          style={{ width: `${getProgressPercentage()}%` }}
         />
       </div>
 

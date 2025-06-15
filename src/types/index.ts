@@ -29,7 +29,6 @@ export interface Order {
   items: CartItem[]
   notes?: string
   created_at: string
-  // Zeitstempel, wann die Bestellung bereit sein soll (optional)
   ready_at?: string
 }
 
@@ -38,5 +37,5 @@ export interface OrderItem {
   name: string
   price: number
   quantity: number
-  options?: MenuOption[]
+  selectedOptions?: MenuOption[]
 }

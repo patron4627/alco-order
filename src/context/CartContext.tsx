@@ -30,15 +30,32 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
   const addToCart = (item: MenuItem) => {
     setItems(prev => {
-      const existingItem = prev.find(cartItem => cartItem.id === item.id)
+      // Erstelle eine eindeutige ID basierend auf Item + Optionen
+      const itemKey = `${item.id}-${JSON.stringify(item.selectedOptions || [])}`
+      
+      const existingItem = prev.find(cartItem => {
+        const cartItemKey = `${cartItem.id}-${JSON.stringify(cartItem.selectedOptions || [])}`
+        return cartItemKey === itemKey
+      })
+      
       if (existingItem) {
-        return prev.map(cartItem =>
-          cartItem.id === item.id
+        return prev.map(cartItem => {
+          const cartItemKey = `${cartItem.id}-${JSON.stringify(cartItem.selectedOptions || [])}`
+          return cartItemKey === itemKey
             ? { ...cartItem, quantity: cartItem.quantity + 1 }
             : cartItem
-        )
+        })
       }
-      return [...prev, { ...item, quantity: 1 }]
+      
+      // Erstelle neues Cart Item mit eindeutiger ID
+      const newCartItem: CartItem = {
+        ...item,
+        id: itemKey, // Verwende eindeutige ID
+        quantity: 1,
+        selectedOptions: item.selectedOptions
+      }
+      
+      return [...prev, newCartItem]
     })
   }
 

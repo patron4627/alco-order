@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
@@ -6,163 +6,259 @@ import OrderCard from '../components/OrderCard'
 import AdminLogin from '../components/AdminLogin'
 import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
-import '../styles/animations.css'
 
 const AdminPage: React.FC = () => {
   const { isAdminAuthenticated, logout } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<'confirmed' | 'completed'>('confirmed')
+  const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
+  const [audioEnabled, setAudioEnabled] = useState(true) // Standardmäßig aktiviert
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
-  const [audioEnabled, setAudioEnabled] = useState(true)
-  const audioUnlockedRef = useRef(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  const getStatusCount = (status: Order['status']): number => {
-    return orders.filter(order => order.status === status).length
-  }
-
-  // Überprüfe, ob der Benutzer authentifiziert ist
-  if (!isAdminAuthenticated) {
-    return <AdminLogin />
-  }
 
   useEffect(() => {
-    // Audio-Datei im Public-Ordner
-    audioRef.current = new Audio('/notification.mp3')
-
-    // Einmalige Geste zum Entsperren des Audio-Kontexts abwarten
-    const unlockAudio = () => {
-      if (audioUnlockedRef.current || !audioRef.current) return
-      audioRef.current.volume = 0
-      audioRef.current.play().then(() => {
-        audioRef.current!.pause()
-        audioRef.current!.currentTime = 0
-        audioRef.current!.volume = 1
-        audioUnlockedRef.current = true
-      }).catch(() => {
-        // Fallback: Erstelle kurze Web-Audio-Biep um trotzdem AudioContext zu entsperren
-        try {
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-          const osc = ctx.createOscillator()
-          const gain = ctx.createGain()
-          osc.connect(gain)
-          gain.connect(ctx.destination)
-          gain.gain.value = 0
-        } catch (error) {
-          console.error('Error unlocking audio:', error)
-        }
-      })
-    }
-
-    // Event Listener für die erste Benutzerinteraktion
-    const handleFirstInteraction = () => {
-      unlockAudio()
-    }
-
-    window.addEventListener('click', handleFirstInteraction)
-    window.addEventListener('touchstart', handleFirstInteraction)
-
-    const fetchOrders = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('orders')
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (error) throw error
-        setOrders(data || [])
-      } catch (error) {
-        console.error('Error fetching orders:', error)
-      }
-    }
+    if (!isAdminAuthenticated) return
 
     fetchOrders()
-
-    // Realtime updates
+    
+    // Echtzeit-Subscription für Bestellungen
     const channel = supabase
-      .channel('orders_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-          filter: 'status=eq.confirmed OR status=eq.completed'
-        },
-        (payload: { new: Order }) => {
-          if (payload.new) {
-            const updatedOrder = payload.new
-            setOrders((prev) => [
-              updatedOrder,
-              ...prev.filter((order) => order.id !== updatedOrder.id),
-            ])
-
-            // Play notification sound if audio is enabled
-            if (audioEnabled) {
-              playNotificationSound()
+      .channel('admin-orders')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'orders' 
+        }, 
+        async (payload) => {
+          console.log('🔔 Admin: Real-time order update:', payload)
+          
+          try {
+            await fetchOrders() // Aktualisiere die gesamte Liste
+            
+            if (payload.eventType === 'INSERT') {
+              const newOrder = payload.new as Order
+              
+              // WICHTIG: Sofortiger Ton bei neuer Bestellung
+              if (audioEnabled) {
+                playNewOrderSound()
+              }
+              
+              // Browser Notification
+              if (Notification.permission === 'granted') {
+                new Notification('🔔 Neue Bestellung!', {
+                  body: `${newOrder.customer_name} hat eine Bestellung für ${newOrder.total_amount.toFixed(2)}€ aufgegeben`,
+                  icon: '/icon-192x192.png',
+                  tag: 'new-order',
+                  requireInteraction: true
+                })
+              }
             }
+          } catch (error) {
+            console.error('Error updating orders:', error)
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('📡 Admin subscription status:', status)
+      })
+
+    // Notification Permission anfragen
+    if (Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
 
     return () => {
-      channel.unsubscribe()
-      window.removeEventListener('click', handleFirstInteraction)
-      window.removeEventListener('touchstart', handleFirstInteraction)
+      console.log('🔌 Admin: Unsubscribing from orders')
+      supabase.removeChannel(channel)
     }
-  }, [isAdminAuthenticated, audioEnabled])
+  }, [audioEnabled, isAdminAuthenticated])
 
-  const filteredOrders = orders.filter((order) => {
-    if (statusFilter === 'confirmed') return order.status === 'confirmed'
-    return order.status === 'completed'
-  })
-
-  const handleStatusUpdate = async (orderId: string, newStatus: string) => {
+  const fetchOrders = async () => {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId)
+        .select('*')
+        .order('created_at', { ascending: false })
 
       if (error) throw error
-
-      // Send notification to client
-      const order = orders.find(o => o.id === orderId)
-      if (order && newStatus === 'confirmed') {
-        const { error: notificationError } = await supabase
-          .from('notifications')
-          .insert({
-            order_id: orderId,
-            message: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
-            type: 'order_status'
-          })
-
-        if (notificationError) {
-          console.error('Error sending notification:', notificationError)
-        }
-      }
+      setOrders(data || [])
     } catch (error) {
-      console.error('Error updating order status:', error)
+      console.error('Error fetching orders:', error)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const playNewOrderSound = () => {
+    try {
+      // Professioneller Benachrichtigungston für neue Bestellungen
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      // Aufmerksamkeitsstarker Ton für neue Bestellungen
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.4)
+      
+      gainNode.gain.setValueAtTime(0.4, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.6)
+    } catch (error) {
+      console.log('Could not play notification sound:', error)
+    }
+  }
+
+  const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
+    setOrders(prev => prev.map(order => 
+      order.id === orderId ? { ...order, status: newStatus } : order
+    ))
   }
 
   const handleLogout = () => {
     logout()
-    window.location.href = '/login'
+  }
+
+  if (!isAdminAuthenticated) {
+    return <AdminLogin />
+  }
+
+  const filteredOrders = statusFilter === 'all' 
+    ? orders 
+    : orders.filter(order => order.status === statusFilter)
+
+  const getStatusCount = (status: Order['status']) => {
+    return orders.filter(order => order.status === status).length
+  }
+
+  if (loading && activeTab === 'orders') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center space-x-2">
+          <RefreshCw className="w-6 h-6 animate-spin text-orange-500" />
+          <span className="text-gray-600">Bestellungen werden geladen...</span>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <span className="text-xl font-bold text-gray-900">Admin Dashboard</span>
-              </div>
-              <div className="ml-4 space-x-2">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+            <p className="text-gray-600">
+              {activeTab === 'orders' ? 'Verwalten Sie eingehende Bestellungen' : 'Verwalten Sie Ihr Menü'}
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            {activeTab === 'orders' && (
+              <>
+                <button
+                  onClick={() => setAudioEnabled(!audioEnabled)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg border transition-colors ${
+                    audioEnabled 
+                      ? 'bg-orange-500 text-white border-orange-500' 
+                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <Bell className="w-4 h-4" />
+                  <span>{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
+                </button>
+
+                <button
+                  onClick={fetchOrders}
+                  className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Aktualisieren</span>
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center space-x-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Abmelden</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-lg shadow-sm p-1 mb-6 inline-flex">
+          <button
+            onClick={() => setActiveTab('orders')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === 'orders'
+                ? 'bg-orange-500 text-white shadow-sm'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Bestellungen</span>
+            {orders.filter(o => o.status === 'pending').length > 0 && (
+              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+                {orders.filter(o => o.status === 'pending').length}
+              </span>
+            )}
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('menu')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === 'menu'
+                ? 'bg-orange-500 text-white shadow-sm'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            <span>Menü verwalten</span>
+          </button>
+        </div>
+
+        {activeTab === 'orders' ? (
+          <>
+            {/* Status Filter */}
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+              <div className="flex items-center space-x-4 overflow-x-auto">
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-gray-500" />
+                  <span className="text-sm font-medium text-gray-700">Filter:</span>
+                </div>
+                
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                    statusFilter === 'all'
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Alle ({orders.length})
+                </button>
+
+                <button
+                  onClick={() => setStatusFilter('pending')}
+                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                    statusFilter === 'pending'
+                      ? 'bg-yellow-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  🔔 Neu ({getStatusCount('pending')})
+                </button>
+
                 <button
                   onClick={() => setStatusFilter('confirmed')}
                   className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
@@ -171,76 +267,34 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Bestätigte ({getStatusCount('confirmed')})
+                  ✅ Bestätigt ({getStatusCount('confirmed')})
+                </button>
+
+                <button
+                  onClick={() => setStatusFilter('ready')}
+                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                    statusFilter === 'ready'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  🍽️ Bereit ({getStatusCount('ready')})
                 </button>
 
                 <button
                   onClick={() => setStatusFilter('completed')}
                   className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
                     statusFilter === 'completed'
-                      ? 'bg-green-500 text-white'
+                      ? 'bg-gray-500 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Abgeholt ({getStatusCount('completed')})
+                  👍 Abgeholt ({getStatusCount('completed')})
                 </button>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={handleLogout}
-                className="text-gray-600 hover:text-gray-900"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Bestellungen</h1>
-          <div className="flex space-x-4">
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'orders' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Bestellungen
-            </button>
-            <button
-              onClick={() => setActiveTab('menu')}
-              className={`px-4 py-2 rounded-lg ${
-                activeTab === 'menu' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Menü
-            </button>
-            <button
-              onClick={() => setAudioEnabled(!audioEnabled)}
-              className={`px-4 py-2 rounded-lg ${
-                audioEnabled ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
-              }`}
-              title="Benachrichtigungston an/aus"
-            >
-              <Bell className={`w-5 h-5 ${audioEnabled ? 'animate-bell' : ''}`} />
-            </button>
-            <button
-              onClick={() => {
-                fetchOrders()
-              }}
-              className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600"
-              title="Bestellungen aktualisieren"
-            >
-              <RefreshCw className="w-5 h-5 animate-spin-slow" />
-            </button>
-          </div>
-        </div>
-
-        {activeTab === 'orders' ? (
-          <div className="bg-white shadow rounded-lg p-6">
+            {/* Orders List */}
             {filteredOrders.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-gray-400 mb-4">
@@ -251,7 +305,7 @@ const AdminPage: React.FC = () => {
                 </h3>
                 <p className="text-gray-600">
                   {statusFilter === 'all' 
-                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch.'
+                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch mit Ton.'
                     : 'Bestellungen mit diesem Status werden hier angezeigt.'
                   }
                 </p>
@@ -267,7 +321,7 @@ const AdminPage: React.FC = () => {
                 ))}
               </div>
             )}
-          </div>
+          </>
         ) : (
           <MenuManagement />
         )}

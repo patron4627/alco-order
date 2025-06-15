@@ -21,15 +21,19 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800'
       case 'confirmed': return 'bg-blue-100 text-blue-800'
-      case 'completed': return 'bg-green-100 text-green-800'
+      case 'ready': return 'bg-green-100 text-green-800'
+      case 'completed': return 'bg-gray-100 text-gray-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
 
   const getStatusText = (status: Order['status']) => {
     switch (status) {
+      case 'pending': return 'Neu'
       case 'confirmed': return 'Bestätigt'
+      case 'ready': return 'Bereit'
       case 'completed': return 'Abgeholt'
       default: return status
     }
@@ -37,28 +41,20 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const handleStatusUpdate = async (newStatus: Order['status']) => {
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', order.id)
+      const updateData: any = { status: newStatus }
       
-      if (error) throw error
-
-      // Send notification to customer
-      if (newStatus === 'confirmed') {
-        const { error: notificationError } = await supabase
-          .from('notifications')
-          .insert({
-            order_id: order.id,
-            message: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
-            type: 'order_status'
-          })
-
-        if (notificationError) {
-          console.error('Error sending notification:', notificationError)
-        }
+      // Setze ready_at wenn Status auf 'ready' geändert wird
+      if (newStatus === 'ready') {
+        updateData.ready_at = new Date().toISOString()
       }
 
+      const { error } = await supabase
+        .from('orders')
+        .update(updateData)
+        .eq('id', order.id)
+
+      if (error) throw error
+      
       if (onStatusUpdate) {
         onStatusUpdate(order.id, newStatus)
       }
@@ -69,14 +65,18 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const getNextStatus = (currentStatus: Order['status']) => {
     switch (currentStatus) {
-      case 'confirmed': return 'completed'
+      case 'pending': return 'confirmed'
+      case 'confirmed': return 'ready'
+      case 'ready': return 'completed'
       default: return null
     }
   }
 
   const getNextStatusText = (currentStatus: Order['status']) => {
     switch (currentStatus) {
-      case 'confirmed': return 'Als abgeholt markieren'
+      case 'pending': return 'Bestätigen'
+      case 'confirmed': return 'Als bereit markieren'
+      case 'ready': return 'Als abgeholt markieren'
       default: return null
     }
   }
@@ -119,24 +119,27 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
       <div className="border-t pt-4 mb-4">
         <h4 className="font-medium text-gray-900 mb-2">Bestellte Artikel:</h4>
-        {order.items.map((item, index) => (
-          <div key={index} className="space-y-2">
-            <div className="flex justify-between text-sm font-medium">
-              <span>{item.quantity}x {item.name}</span>
-              <span>{(item.price * item.quantity).toFixed(2)}€</span>
-            </div>
-            {item.options && item.options.length > 0 && (
-              <div className="ml-4 space-y-1 text-sm text-gray-600">
-                {item.options.map((option, optIndex) => (
-                  <div key={optIndex} className="flex items-center space-x-2">
-                    <span>•</span>
-                    <span>{option.name}</span>
-                  </div>
-                ))}
+        <div className="space-y-2">
+          {order.items.map((item, index) => (
+            <div key={index} className="text-sm">
+              <div className="flex justify-between">
+                <span className="font-medium">{item.quantity}x {item.name}</span>
+                <span>{(item.price * item.quantity).toFixed(2)}€</span>
               </div>
-            )}
-          </div>
-        ))}
+              {/* Zeige gewählte Optionen an */}
+              {item.selectedOptions && item.selectedOptions.length > 0 && (
+                <div className="ml-4 mt-1 space-y-1">
+                  {item.selectedOptions.map((option, optIndex) => (
+                    <div key={optIndex} className="flex justify-between text-xs text-gray-600">
+                      <span>+ {option.name}</span>
+                      <span>+{option.price.toFixed(2)}€</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {order.notes && (
@@ -160,6 +163,9 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
       <div className="text-xs text-gray-500 mt-2">
         Bestellt: {formatTime(order.created_at)}
+        {order.ready_at && (
+          <span className="ml-2">• Bereit: {formatTime(order.ready_at)}</span>
+        )}
       </div>
     </div>
   )
