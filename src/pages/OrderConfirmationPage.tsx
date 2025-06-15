@@ -20,7 +20,6 @@ const OrderConfirmationPage = () => {
   const [order, setOrder] = useState<ExtendedOrder | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showTimer, setShowTimer] = useState(false)
 
   const fetchOrder = async () => {
     try {
@@ -31,14 +30,13 @@ const OrderConfirmationPage = () => {
         .single()
 
       if (error) throw error
-      
+
       if (!data) {
         console.error('Order not found:', orderId)
         throw new Error('Bestellung nicht gefunden')
       }
 
       setOrder(data as ExtendedOrder)
-      setShowTimer(true)
     } catch (err) {
       console.error('Error in fetchOrder:', err)
       setError(err instanceof Error ? err.message : 'Fehler beim Laden der Bestellung')
@@ -52,108 +50,25 @@ const OrderConfirmationPage = () => {
     fetchOrder()
   }, [orderId, navigate])
 
-  useEffect(() => {
-    let orderChannel: any = null
-    let notificationChannel: any = null
-
-    if (!order) return
-
-    try {
-      // Cleanup existing subscriptions
-      if (orderChannel) {
-        orderChannel.unsubscribe()
-      }
-      if (notificationChannel) {
-        notificationChannel.unsubscribe()
-      }
-
-      // Create new subscriptions
-      orderChannel = supabase
-        .channel('order-updates')
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-          filter: `id=eq.${order.id}`
-        }, (payload) => {
-          const updatedOrder = payload.new as ExtendedOrder
-          setOrder(updatedOrder)
-          if (updatedOrder.status === 'confirmed') {
-            playNotificationSound()
-          }
-        })
-        .subscribe()
-
-      notificationChannel = supabase
-        .channel('notifications')
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `order_id=eq.${order.id}`
-        }, (payload) => {
-          const notification = payload.new
-          if (notification && !notification.read) {
-            // Mark notification as read
-            supabase
-              .from('notifications')
-              .update({ read: true })
-              .eq('id', notification.id)
-              .catch(error => console.error('Error marking notification as read:', error))
-
-            // Show notification to customer
-            alert(notification.message)
-          }
-        })
-        .subscribe()
-
-      return () => {
-        // Cleanup subscriptions on unmount
-        if (orderChannel) {
-          try {
-            orderChannel.unsubscribe()
-          } catch (error) {
-            console.error('Error unsubscribing from order channel:', error)
-          }
-        }
-        if (notificationChannel) {
-          try {
-            notificationChannel.unsubscribe()
-          } catch (error) {
-            console.error('Error unsubscribing from notification channel:', error)
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error setting up subscriptions:', error)
-    }
-  }, [order])
-
   const handleConfirmation = async () => {
     try {
       const { error } = await supabase
         .from('orders')
         .update({ status: 'completed' })
-        .eq('id', order.id)
+        .eq('id', order?.id)
 
       if (error) throw error
-      setOrder(prev => prev ? { ...prev, status: 'completed' } : null)
-      
-      // Send confirmation notification
+
       await supabase
         .from('notifications')
         .insert({
-          order_id: order.id,
+          order_id: order?.id,
           message: 'Ihre Bestellung wurde erfolgreich abgeschlossen.',
-          type: 'order_status'
-        })
-        .then(({ error }) => {
-          if (error) {
-            console.error('Error sending confirmation notification:', error)
-          }
+          read: false
         })
     } catch (err) {
-      setError(err as Error)
+      console.error('Error confirming order:', err)
+      alert('Fehler beim Abschließen der Bestellung')
     }
   }
 
@@ -163,6 +78,35 @@ const OrderConfirmationPage = () => {
         <div className="text-center">
           <p className="text-gray-600">Lade Bestellung...</p>
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mt-4"></div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center p-6 bg-white rounded-lg shadow-md">
+          <div className="mb-4">
+            <p className="text-red-500 font-semibold mb-2">Fehler beim Laden der Bestellung</p>
+            <p className="text-gray-600 text-sm">{error}</p>
+          </div>
+          <button
+            onClick={() => {
+              setError(null)
+              setLoading(true)
+              fetchOrder()
+            }}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mr-2"
+          >
+            Neu laden
+          </button>
+          <button
+            onClick={() => navigate('/home')}
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+          >
+            Zurück zur Startseite
+          </button>
         </div>
       </div>
     )
@@ -189,12 +133,10 @@ const OrderConfirmationPage = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow-md p-6">
           <h1 className="text-2xl font-bold mb-4">Bestellbestätigung</h1>
-          
           <div className="mb-6">
             <p className="text-gray-600">Bestellnummer: {order.id}</p>
             <p className="text-gray-600">Bestelldatum: {new Date(order.pickup_time).toLocaleString()}</p>
           </div>
-
           <div className="mb-6">
             <h2 className="text-xl font-semibold mb-2">Bestellpositionen</h2>
             <div className="space-y-2">
@@ -202,25 +144,40 @@ const OrderConfirmationPage = () => {
                 <div key={index} className="flex justify-between items-center">
                   <span>{item.name}</span>
                   <span>{item.quantity} x {item.price.toFixed(2)}€</span>
-                  <span>{item.quantity}x {item.name}</span>
-                  <span>{(item.price * item.quantity).toFixed(2)}€</span>
                 </div>
               ))}
-              <div className="border-t border-gray-200 pt-4">
+              <div className="border-t pt-2">
                 <div className="flex justify-between font-semibold">
-                  <span>Gesamtsumme:</span>
+                  <span>Gesamtbetrag</span>
                   <span>{order.total_amount.toFixed(2)}€</span>
                 </div>
               </div>
             </div>
           </div>
-
-          <div className="text-center">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold mb-2">Bestellstatus</h2>
+            <div className="bg-blue-100 p-4 rounded">
+              <p className="text-blue-600">Ihre Bestellung wird gerade zubereitet...</p>
+              <div className="mt-2">
+                <div className="text-sm text-gray-600">
+                  Wenn Ihre Bestellung nicht innerhalb von 10 Minuten bestätigt wird, 
+                  erhalten Sie eine Benachrichtigung.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-between items-center">
+            <button
+              onClick={handleConfirmation}
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              disabled={order.status !== 'confirmed'}
+            >
+              {order.status === 'confirmed' ? 'Bestellung abgeschlossen' : 'Warten auf Bestätigung...'}
+            </button>
             <button
               onClick={() => navigate('/home')}
-              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
             >
-              <Home className="w-4 h-4 inline-block mr-2" />
               Zurück zur Startseite
             </button>
           </div>
