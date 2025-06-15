@@ -18,8 +18,6 @@ const AdminPage: React.FC = () => {
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
-    fetchOrders()
-    
     // Echtzeit-Subscription für Bestellungen
     const channel = supabase
       .channel('admin-orders')
@@ -29,24 +27,59 @@ const AdminPage: React.FC = () => {
           schema: 'public', 
           table: 'orders' 
         }, 
-        async (payload) => {
+        (payload) => {
           console.log('🔔 Admin: Real-time order update:', payload)
           
           try {
-            await fetchOrders() // Aktualisiere die gesamte Liste
-            
-            if (payload.eventType === 'INSERT') {
-              const newOrder = payload.new as Order
-              
-              // WICHTIG: Sofortiger Ton bei neuer Bestellung
-              if (audioEnabled) {
-                playNewOrderSound()
-              }
-              
-              // Browser Notification
-              if (Notification.permission === 'granted') {
-                new Notification('🔔 Neue Bestellung!', {
-                  body: `${newOrder.customer_name} hat eine Bestellung für ${newOrder.total_amount.toFixed(2)}€ aufgegeben`,
+            // Aktualisiere die gesamte Liste
+            fetchOrders()
+          } catch (error) {
+            console.error('Error fetching orders:', error)
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Admin subscription status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to real-time updates')
+        }
+      })
+
+    // Initialer Datenlad
+    fetchOrders()
+
+    return () => {
+      console.log('🔌 Unsubscribing from orders')
+      supabase.removeChannel(channel)
+    }
+  }, [isAdminAuthenticated])
+
+  // Automatische Aktualisierung alle 5 Sekunden
+  useEffect(() => {
+    if (!isAdminAuthenticated) return
+
+    const interval = setInterval(() => {
+      fetchOrders()
+    }, 5000) // 5 Sekunden
+
+    return () => clearInterval(interval)
+  }, [isAdminAuthenticated])
+
+  const fetchOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setOrders(data || [])
+    } catch (error) {
+      console.error('Error fetching orders:', error)
+    } finally {
+      setLoading(false)
+    }
+  }                  body: `${newOrder.customer_name} hat eine Bestellung für ${newOrder.total_amount.toFixed(2)}€ aufgegeben`,
                   icon: '/icon-192x192.png',
                   tag: 'new-order',
                   requireInteraction: true

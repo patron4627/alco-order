@@ -13,59 +13,57 @@ const OrderConfirmationPage: React.FC = () => {
   const [showTimer, setShowTimer] = useState(true)
 
   useEffect(() => {
-    if (orderId) {
-      fetchOrder()
-      
-      // Echtzeit-Subscription für Bestellung
-      const channel = supabase
-        .channel(`order-updates-${orderId}`)
-        .on('postgres_changes', 
-          { 
-            event: 'UPDATE', 
-            schema: 'public', 
-            table: 'orders',
-            filter: `id=eq.${orderId}`
-          }, 
-          async (payload) => {
-            console.log('🔄 Order update received:', payload)
+    if (!orderId) return
+
+    // Echtzeit-Subscription für Bestellstatus
+    const channel = supabase
+      .channel(`order-updates-${orderId}`)
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'orders',
+          filter: `id=eq.${orderId}` 
+        }, 
+        (payload) => {
+          console.log('🔔 Order update:', payload)
+          
+          try {
+            // Aktualisiere den Bestellstatus
+            fetchOrder()
             
-            try {
-              await fetchOrder() // Aktualisiere die gesamte Bestellung
+            // Wenn der Status nicht mehr "pending" ist, zeige Timer an
+            if (order?.status !== 'pending') {
+              setShowTimer(false)
               
-              // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
-              if (order?.status !== 'pending') {
-                setShowTimer(false)
-                
-                // Browser-Benachrichtigung
-                if (Notification.permission === 'granted') {
-                  new Notification('🎉 Bestellung bestätigt!', {
-                    body: `Ihre Bestellung wurde bestätigt und wird zubereitet.`,
-                    icon: '/icon-192x192.png',
-                    tag: 'order-confirmed'
-                  })
-                }
-                
-                // Akustisches Signal
-                playNotificationSound()
+              // Browser Notification
+              if (Notification.permission === 'granted') {
+                new Notification('✅ Bestellung bestätigt!', {
+                  body: `Bestellung ${order?.id} wurde erfolgreich bestätigt`,
+                  icon: '/icon-192x192.png',
+                  tag: 'order-confirmed',
+                  requireInteraction: true
+                })
               }
-            } catch (error) {
-              console.error('Error updating order:', error)
             }
+          } catch (error) {
+            console.error('Error updating order:', error)
           }
-        )
-        .subscribe((status) => {
-          console.log('📡 Subscription status:', status)
-        })
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to order updates')
+        }
+      })
 
-      // Notification Permission anfragen
-      if (Notification.permission === 'default') {
-        Notification.requestPermission()
-      }
+    // Initialer Datenlad
+    fetchOrder()
 
-      return () => {
-        console.log('🔌 Unsubscribing from order updates')
-        supabase.removeChannel(channel)
-      }
+    return () => {
+      console.log('🔌 Unsubscribing from order updates')
+      supabase.removeChannel(channel)
     }
   }, [orderId])
 
