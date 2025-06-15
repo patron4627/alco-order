@@ -22,6 +22,8 @@ const OrderConfirmationPage: React.FC = () => {
   const [showTimer, setShowTimer] = useState(false)
   const [timeToReady, setTimeToReady] = useState(10 * 60) // 10 Minuten in Sekunden
   const [error, setError] = useState<string | null>(null)
+  const [orderChannel, setOrderChannel] = useState<any>(null)
+  const [notificationChannel, setNotificationChannel] = useState<any>(null)
   const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
 
@@ -33,20 +35,31 @@ const OrderConfirmationPage: React.FC = () => {
 
     const fetchOrder = async () => {
       try {
+        setLoading(true)
+        setError(null)
+        
         const { data, error } = await supabase
           .from('orders')
           .select('*')
           .eq('id', orderId)
           .single()
 
-        if (error) throw error
-        if (!data) throw new Error('Order not found')
+        if (error) {
+          console.error('Error fetching order:', error)
+          throw error
+        }
+        
+        if (!data) {
+          console.error('Order not found:', orderId)
+          throw new Error('Bestellung nicht gefunden')
+        }
 
         setOrder(data as ExtendedOrder)
         setShowTimer(true)
-        setLoading(false)
       } catch (err) {
-        setError('Fehler beim Laden der Bestellung')
+        console.error('Error in fetchOrder:', err)
+        setError(err instanceof Error ? err.message : 'Fehler beim Laden der Bestellung')
+      } finally {
         setLoading(false)
       }
     }
@@ -57,7 +70,18 @@ const OrderConfirmationPage: React.FC = () => {
   useEffect(() => {
     if (!order) return
 
-    const orderChannel = supabase
+    // Cleanup existing subscriptions
+    if (orderChannel) {
+      orderChannel.unsubscribe()
+      setOrderChannel(null)
+    }
+    if (notificationChannel) {
+      notificationChannel.unsubscribe()
+      setNotificationChannel(null)
+    }
+
+    // Create new subscriptions
+    const newOrderChannel = supabase
       .channel('order-updates')
       .on('postgres_changes', {
         event: '*',
@@ -73,7 +97,7 @@ const OrderConfirmationPage: React.FC = () => {
       })
       .subscribe()
 
-    const notificationChannel = supabase
+    const newNotificationChannel = supabase
       .channel('notifications')
       .on('postgres_changes', {
         event: '*',
@@ -96,9 +120,19 @@ const OrderConfirmationPage: React.FC = () => {
       })
       .subscribe()
 
+    // Store references for cleanup
+    setOrderChannel(newOrderChannel)
+    setNotificationChannel(newNotificationChannel)
+
     return () => {
-      orderChannel.unsubscribe()
-      notificationChannel.unsubscribe()
+      if (orderChannel) {
+        orderChannel.unsubscribe()
+        setOrderChannel(null)
+      }
+      if (notificationChannel) {
+        notificationChannel.unsubscribe()
+        setNotificationChannel(null)
+      }
     }
   }, [order])
 
@@ -135,6 +169,7 @@ const OrderConfirmationPage: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-600">Lade Bestellung...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mt-4"></div>
         </div>
       </div>
     )
@@ -143,11 +178,24 @@ const OrderConfirmationPage: React.FC = () => {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-500">Fehler: {error}</p>
+        <div className="text-center p-6 bg-white rounded-lg shadow-md">
+          <div className="mb-4">
+            <p className="text-red-500 font-semibold mb-2">Fehler beim Laden der Bestellung</p>
+            <p className="text-gray-600 text-sm">{error}</p>
+          </div>
+          <button
+            onClick={() => {
+              setError(null)
+              setLoading(true)
+              fetchOrder()
+            }}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mr-2"
+          >
+            Neu laden
+          </button>
           <button
             onClick={() => navigate('/home')}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
           >
             Zurück zur Startseite
           </button>
