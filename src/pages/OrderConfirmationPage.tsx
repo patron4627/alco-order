@@ -57,7 +57,8 @@ const OrderConfirmationPage: React.FC = () => {
   useEffect(() => {
     if (!order) return
 
-    const channel = supabase
+    // Subscribe to order updates
+    const orderChannel = supabase
       .channel('order-updates')
       .on('postgres_changes', {
         event: '*',
@@ -73,8 +74,32 @@ const OrderConfirmationPage: React.FC = () => {
       })
       .subscribe()
 
+    // Subscribe to notifications
+    const notificationChannel = supabase
+      .channel('notifications')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `order_id=eq.${order.id}`
+      }, (payload) => {
+        const notification = payload.new
+        if (notification && !notification.read) {
+          // Mark notification as read
+          supabase
+            .from('notifications')
+            .update({ read: true })
+            .eq('id', notification.id)
+
+          // Show notification to customer
+          alert(notification.message)
+        }
+      })
+      .subscribe()
+
     return () => {
-      channel.unsubscribe()
+      orderChannel.unsubscribe()
+      notificationChannel.unsubscribe()
     }
   }, [order])
 

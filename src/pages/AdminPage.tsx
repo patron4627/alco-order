@@ -12,7 +12,7 @@ const AdminPage: React.FC = () => {
   const { isAdminAuthenticated, logout } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
+  const [statusFilter, setStatusFilter] = useState<'confirmed' | 'completed'>('confirmed')
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   const [audioEnabled, setAudioEnabled] = useState(true)
   const audioUnlockedRef = useRef(false)
@@ -98,7 +98,7 @@ const AdminPage: React.FC = () => {
             ])
 
             // Play notification sound if audio is enabled
-            if (audioEnabled && updatedOrder.status === 'ready') {
+            if (audioEnabled) {
               playNotificationSound()
             }
           }
@@ -114,8 +114,8 @@ const AdminPage: React.FC = () => {
   }, [isAdminAuthenticated, audioEnabled])
 
   const filteredOrders = orders.filter((order) => {
-    if (statusFilter === 'all') return true
-    return order.status === statusFilter
+    if (statusFilter === 'confirmed') return order.status === 'confirmed'
+    return order.status === 'completed'
   })
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
@@ -126,6 +126,22 @@ const AdminPage: React.FC = () => {
         .eq('id', orderId)
 
       if (error) throw error
+
+      // Send notification to client
+      const order = orders.find(o => o.id === orderId)
+      if (order && newStatus === 'confirmed') {
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .insert({
+            order_id: orderId,
+            message: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
+            type: 'order_status'
+          })
+
+        if (notificationError) {
+          console.error('Error sending notification:', notificationError)
+        }
+      }
     } catch (error) {
       console.error('Error updating order status:', error)
     }
@@ -133,7 +149,7 @@ const AdminPage: React.FC = () => {
 
   const handleLogout = () => {
     logout()
-    navigate('/login')
+    window.location.href = '/login'
   }
 
   return (
@@ -147,27 +163,35 @@ const AdminPage: React.FC = () => {
               </div>
               <div className="ml-4 space-x-2">
                 <button
-                  onClick={() => setStatusFilter('ready')}
+                  onClick={() => setStatusFilter('confirmed')}
                   className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'ready'
-                      ? 'bg-gray-500 text-white'
+                    statusFilter === 'confirmed'
+                      ? 'bg-blue-500 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Bereit ({getStatusCount('ready')})
+                  Bestätigte ({getStatusCount('confirmed')})
                 </button>
 
                 <button
                   onClick={() => setStatusFilter('completed')}
                   className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
                     statusFilter === 'completed'
-                      ? 'bg-gray-500 text-white'
+                      ? 'bg-green-500 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
                   Abgeholt ({getStatusCount('completed')})
                 </button>
               </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={handleLogout}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </div>
@@ -205,7 +229,6 @@ const AdminPage: React.FC = () => {
             <button
               onClick={() => {
                 fetchOrders()
-                setStatusFilter('all')
               }}
               className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600"
               title="Bestellungen aktualisieren"

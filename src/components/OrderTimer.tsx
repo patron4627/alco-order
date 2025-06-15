@@ -1,6 +1,10 @@
 import React from 'react'
 import { useState, useEffect } from 'react'
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { supabase } from '../lib/supabase'
+import { Order } from '../types'
+import { playNotificationSound } from '../utils/audio'
+import { useNavigate } from 'react-router-dom'
 import { JSX } from 'react/jsx-runtime'
 
 interface OrderTimerProps {
@@ -15,7 +19,38 @@ const getProgressPercentage = (timeLeft: number, totalTime: number): number => {
 
 const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
   const [timeLeft, setTimeLeft] = useState<number>(timeToReady)
+  const [orderStatus, setOrderStatus] = useState<Order['status']>('pending')
+  const [showConfirmation, setShowConfirmation] = useState(false)
   const totalTime = timeToReady
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    // Subscribe to order status updates
+    const channel = supabase
+      .channel('order-updates')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+        filter: `id=eq.${orderId}`
+      }, (payload) => {
+        const updatedOrder = payload.new as Order
+        setOrderStatus(updatedOrder.status)
+        
+        if (updatedOrder.status === 'confirmed') {
+          setShowConfirmation(true)
+          playNotificationSound()
+          
+          // Show confirmation message
+          alert('🎉 Ihre Bestellung wurde bestätigt und wird zubereitet!')
+        }
+      })
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [orderId])
 
   useEffect(() => {
     if (timeLeft <= 0) return
@@ -60,18 +95,36 @@ const OrderTimer = ({ timeToReady, orderId }: OrderTimerProps) => {
   }
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 animate-pulse">
-      <div className="text-center mb-4">
-        <div className="flex items-center justify-center space-x-2 mb-2">
-          <Clock className="w-6 h-6 text-blue-600 animate-spin" />
-          <h3 className="text-lg font-semibold text-blue-900">
-            ⏳ Warten auf Bestätigung
-          </h3>
+    <div>
+      {showConfirmation ? (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+          <div className="text-center mb-4">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+              <h3 className="text-lg font-semibold text-green-900">
+                🎉 Bestellung bestätigt!
+              </h3>
+            </div>
+            <p className="text-green-700 text-sm">
+              Ihre Bestellung wird zubereitet. Sie können die Seite nun schließen.
+            </p>
+          </div>
         </div>
-        <p className="text-blue-700 text-sm">
-          Bitte bleiben Sie auf dieser Seite. Sie erhalten eine sofortige Benachrichtigung, sobald Ihre Bestellung bestätigt wird.
-        </p>
-      </div>
+      ) : (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 animate-pulse">
+          <div className="text-center mb-4">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <Clock className="w-6 h-6 text-blue-600 animate-spin" />
+              <h3 className="text-lg font-semibold text-blue-900">
+                ⏳ Warten auf Bestätigung
+              </h3>
+            </div>
+            <p className="text-blue-700 text-sm">
+              Bitte bleiben Sie auf dieser Seite. Sie erhalten eine sofortige Benachrichtigung, sobald Ihre Bestellung bestätigt wird.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="text-center mb-4">
         <div className="text-4xl font-bold text-blue-900 mb-2 font-mono">

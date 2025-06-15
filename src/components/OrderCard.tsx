@@ -21,19 +21,15 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
       case 'confirmed': return 'bg-blue-100 text-blue-800'
-      case 'ready': return 'bg-green-100 text-green-800'
-      case 'completed': return 'bg-gray-100 text-gray-800'
+      case 'completed': return 'bg-green-100 text-green-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
 
   const getStatusText = (status: Order['status']) => {
     switch (status) {
-      case 'pending': return 'Neu'
       case 'confirmed': return 'Bestätigt'
-      case 'ready': return 'Bereit'
       case 'completed': return 'Abgeholt'
       default: return status
     }
@@ -48,6 +44,21 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
       
       if (error) throw error
 
+      // Send notification to customer
+      if (newStatus === 'confirmed') {
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .insert({
+            order_id: order.id,
+            message: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
+            type: 'order_status'
+          })
+
+        if (notificationError) {
+          console.error('Error sending notification:', notificationError)
+        }
+      }
+
       if (onStatusUpdate) {
         onStatusUpdate(order.id, newStatus)
       }
@@ -58,18 +69,14 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const getNextStatus = (currentStatus: Order['status']) => {
     switch (currentStatus) {
-      case 'pending': return 'confirmed'
-      case 'confirmed': return null // "Bereit" wird automatisch gesetzt
-      case 'ready': return 'completed'
+      case 'confirmed': return 'completed'
       default: return null
     }
   }
 
   const getNextStatusText = (currentStatus: Order['status']) => {
     switch (currentStatus) {
-      case 'pending': return 'Bestätigen'
-      case 'confirmed': return null
-      case 'ready': return 'Als abgeholt markieren'
+      case 'confirmed': return 'Als abgeholt markieren'
       default: return null
     }
   }
