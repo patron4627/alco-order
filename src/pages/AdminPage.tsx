@@ -33,12 +33,28 @@ const AdminPage: React.FC = () => {
           try {
             // Aktualisiere die gesamte Liste
             fetchOrders()
+            
+            // Wenn es eine neue Bestellung ist
+            if (payload.eventType === 'INSERT') {
+              // Browser Notification
+              if (Notification.permission === 'granted') {
+                new Notification('🔔 Neue Bestellung!', {
+                  body: `Bestellung ${payload.new.id} wurde aufgegeben`,
+                  icon: '/icon-192x192.png',
+                  tag: 'new-order',
+                  requireInteraction: true
+                })
+              }
+              
+              // Akustisches Signal
+              playNewOrderSound()
+            }
           } catch (error) {
             console.error('Error fetching orders:', error)
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         console.log('📡 Admin subscription status:', status)
         if (status === 'SUBSCRIBED') {
           console.log('✅ Successfully subscribed to real-time updates')
@@ -79,12 +95,17 @@ const AdminPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }                  body: `${newOrder.customer_name} hat eine Bestellung für ${newOrder.total_amount.toFixed(2)}€ aufgegeben`,
-                  icon: '/icon-192x192.png',
-                  tag: 'new-order',
-                  requireInteraction: true
-                })
-              }
+  }
+
+  const fetchOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setOrders(data || [])
             }
           } catch (error) {
             console.error('Error updating orders:', error)
