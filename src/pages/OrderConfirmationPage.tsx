@@ -72,65 +72,84 @@ const OrderConfirmationPage: React.FC = () => {
 
     // Cleanup existing subscriptions
     if (orderChannel) {
-      orderChannel.unsubscribe()
+      try {
+        orderChannel.unsubscribe()
+      } catch (error) {
+        console.error('Error unsubscribing from order channel:', error)
+      }
       setOrderChannel(null)
     }
     if (notificationChannel) {
-      notificationChannel.unsubscribe()
+      try {
+        notificationChannel.unsubscribe()
+      } catch (error) {
+        console.error('Error unsubscribing from notification channel:', error)
+      }
       setNotificationChannel(null)
     }
 
-    // Create new subscriptions
-    const newOrderChannel = supabase
-      .channel('order-updates')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'orders',
-        filter: `id=eq.${order.id}`
-      }, (payload) => {
-        const updatedOrder = payload.new as ExtendedOrder
-        setOrder(updatedOrder)
-        if (updatedOrder.status === 'confirmed') {
-          playNotificationSound()
-        }
-      })
-      .subscribe()
+    // Create new subscriptions only if we don't have active ones
+    if (!orderChannel && !notificationChannel) {
+      const newOrderChannel = supabase
+        .channel('order-updates')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${order.id}`
+        }, (payload) => {
+          const updatedOrder = payload.new as ExtendedOrder
+          setOrder(updatedOrder)
+          if (updatedOrder.status === 'confirmed') {
+            playNotificationSound()
+          }
+        })
+        .subscribe()
 
-    const newNotificationChannel = supabase
-      .channel('notifications')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'notifications',
-        filter: `order_id=eq.${order.id}`
-      }, (payload) => {
-        const notification = payload.new
-        if (notification && !notification.read) {
-          // Mark notification as read
-          supabase
-            .from('notifications')
-            .update({ read: true })
-            .eq('id', notification.id)
-            .catch(error => console.error('Error marking notification as read:', error))
+      const newNotificationChannel = supabase
+        .channel('notifications')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `order_id=eq.${order.id}`
+        }, (payload) => {
+          const notification = payload.new
+          if (notification && !notification.read) {
+            // Mark notification as read
+            supabase
+              .from('notifications')
+              .update({ read: true })
+              .eq('id', notification.id)
+              .catch(error => console.error('Error marking notification as read:', error))
 
-          // Show notification to customer
-          alert(notification.message)
-        }
-      })
-      .subscribe()
+            // Show notification to customer
+            alert(notification.message)
+          }
+        })
+        .subscribe()
 
-    // Store references for cleanup
-    setOrderChannel(newOrderChannel)
-    setNotificationChannel(newNotificationChannel)
+      // Store references for cleanup
+      setOrderChannel(newOrderChannel)
+      setNotificationChannel(newNotificationChannel)
+    }
 
     return () => {
+      // Cleanup subscriptions on unmount
       if (orderChannel) {
-        orderChannel.unsubscribe()
+        try {
+          orderChannel.unsubscribe()
+        } catch (error) {
+          console.error('Error unsubscribing from order channel:', error)
+        }
         setOrderChannel(null)
       }
       if (notificationChannel) {
-        notificationChannel.unsubscribe()
+        try {
+          notificationChannel.unsubscribe()
+        } catch (error) {
+          console.error('Error unsubscribing from notification channel:', error)
+        }
         setNotificationChannel(null)
       }
     }
