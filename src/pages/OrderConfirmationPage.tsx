@@ -13,57 +13,51 @@ const OrderConfirmationPage: React.FC = () => {
   const [showTimer, setShowTimer] = useState(true)
 
   useEffect(() => {
-    if (!orderId) return
-
-    // Echtzeit-Subscription für Bestellstatus
-    const channel = supabase
-      .channel(`order-updates-${orderId}`)
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'orders',
-          filter: `id=eq.${orderId}` 
-        }, 
-        (payload) => {
-          console.log('🔔 Order update:', payload)
-          
-          try {
-            // Aktualisiere den Bestellstatus
-            fetchOrder()
+    if (orderId) {
+      fetchOrder()
+      
+      // Echtzeit-Subscription für Order-Updates
+      const subscription = supabase
+        .channel(`order-${orderId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'orders',
+            filter: `id=eq.${orderId}`
+          }, 
+          (payload) => {
+            console.log('Order update received:', payload)
+            const updatedOrder = payload.new as Order
+            setOrder(updatedOrder)
             
-            // Wenn der Status nicht mehr "pending" ist, zeige Timer an
-            if (order?.status !== 'pending') {
+            // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
+            if (updatedOrder.status !== 'pending') {
               setShowTimer(false)
               
-              // Browser Notification
+              // Browser-Benachrichtigung
               if (Notification.permission === 'granted') {
-                new Notification('✅ Bestellung bestätigt!', {
-                  body: `Bestellung ${order?.id} wurde erfolgreich bestätigt`,
-                  icon: '/icon-192x192.png',
-                  tag: 'order-confirmed',
-                  requireInteraction: true
+                new Notification('Bestellung bestätigt!', {
+                  body: `Ihre Bestellung wurde bestätigt und wird zubereitet.`,
+                  icon: '/icon-192x192.png'
                 })
               }
+              
+              // Akustisches Signal
+              playNotificationSound()
             }
-          } catch (error) {
-            console.error('Error updating order:', error)
           }
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Subscription status:', status)
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to order updates')
-        }
-      })
+        )
+        .subscribe()
 
-    // Initialer Datenlad
-    fetchOrder()
+      // Notification Permission anfragen
+      if (Notification.permission === 'default') {
+        Notification.requestPermission()
+      }
 
-    return () => {
-      console.log('🔌 Unsubscribing from order updates')
-      supabase.removeChannel(channel)
+      return () => {
+        subscription.unsubscribe()
+      }
     }
   }, [orderId])
 
@@ -92,29 +86,23 @@ const OrderConfirmationPage: React.FC = () => {
   }
 
   const playNotificationSound = () => {
-    try {
-      // Erstelle einen professionellen Bestätigungston
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      
-      // Freudiger Bestätigungston
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.1)
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.2)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.3)
-      
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
-    } catch (error) {
-      console.log('Could not play notification sound:', error)
-    }
+    // Erstelle einen einfachen Benachrichtigungston
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1)
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+    
+    oscillator.start(audioContext.currentTime)
+    oscillator.stop(audioContext.currentTime + 0.3)
   }
 
   const formatTime = (timeString: string) => {
@@ -138,21 +126,21 @@ const OrderConfirmationPage: React.FC = () => {
         }
       case 'confirmed':
         return {
-          title: '🎉 Bestellung bestätigt!',
+          title: 'Bestellung bestätigt!',
           message: 'Ihre Bestellung wird zubereitet und ist pünktlich zur Abholzeit fertig.',
           color: 'text-blue-600',
           bgColor: 'bg-blue-100'
         }
       case 'ready':
         return {
-          title: '✅ Bestellung ist bereit!',
+          title: 'Bestellung ist bereit!',
           message: 'Ihre Bestellung ist fertig und kann abgeholt werden.',
           color: 'text-green-600',
           bgColor: 'bg-green-100'
         }
       case 'completed':
         return {
-          title: '👍 Bestellung abgeholt!',
+          title: 'Bestellung abgeholt!',
           message: 'Vielen Dank für Ihren Besuch. Wir freuen uns auf Ihren nächsten Besuch!',
           color: 'text-gray-600',
           bgColor: 'bg-gray-100'
@@ -263,16 +251,13 @@ const OrderConfirmationPage: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Ihre Artikel</h3>
             <div className="space-y-3">
               {order.items.map((item, index) => (
-                <div key={index} className="flex justify-between items-start">
-                  <div className="flex-1">
+                <div key={index} className="flex justify-between items-center">
+                  <div>
                     <span className="font-medium">{item.quantity}x {item.name}</span>
-                    {item.selectedOptions && item.selectedOptions.length > 0 && (
-                      <div className="text-sm text-gray-600 ml-4 mt-1">
-                        {item.selectedOptions.map((option, optIndex) => (
-                          <div key={optIndex} className="flex justify-between">
-                            <span>+ {option.name}</span>
-                            <span>+{option.price.toFixed(2)}€</span>
-                          </div>
+                    {item.options && item.options.length > 0 && (
+                      <div className="text-sm text-gray-600 ml-4">
+                        {item.options.map((option, optIndex) => (
+                          <div key={optIndex}>+ {option.name} (+{option.price.toFixed(2)}€)</div>
                         ))}
                       </div>
                     )}

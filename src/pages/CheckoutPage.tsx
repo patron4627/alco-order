@@ -41,11 +41,10 @@ const CheckoutPage: React.FC = () => {
         pickup_time: pickupTime,
         total_amount: totalPrice,
         items: items.map(item => ({
-          id: item.id.split('-')[0], // Verwende ursprüngliche Item-ID
+          id: item.id,
           name: item.name,
           price: item.price,
-          quantity: item.quantity,
-          selectedOptions: item.selectedOptions || []
+          quantity: item.quantity
         })),
         notes: formData.notes || null,
         status: 'pending' as const
@@ -201,29 +200,16 @@ const CheckoutPage: React.FC = () => {
             
             <div className="space-y-4 mb-6">
               {items.map((item) => (
-                <div key={item.id} className="border-b pb-3">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <span className="font-medium">{item.quantity}x {item.name}</span>
-                      <span className="text-sm text-gray-600 block">
-                        {(item.price / (1 + (item.selectedOptions?.reduce((sum, opt) => sum + opt.price, 0) || 0) / item.price)).toFixed(2)}€ Basis
-                      </span>
-                      {/* Zeige gewählte Optionen */}
-                      {item.selectedOptions && item.selectedOptions.length > 0 && (
-                        <div className="mt-1 ml-4 space-y-1">
-                          {item.selectedOptions.map((option, index) => (
-                            <div key={index} className="flex justify-between text-sm text-gray-600">
-                              <span>+ {option.name}</span>
-                              <span>+{option.price.toFixed(2)}€</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <span className="font-medium ml-4">
-                      {(item.price * item.quantity).toFixed(2)}€
+                <div key={item.id} className="flex justify-between items-center">
+                  <div>
+                    <span className="font-medium">{item.quantity}x {item.name}</span>
+                    <span className="text-sm text-gray-600 block">
+                      {item.price.toFixed(2)}€ pro Stück
                     </span>
                   </div>
+                  <span className="font-medium">
+                    {(item.price * item.quantity).toFixed(2)}€
+                  </span>
                 </div>
               ))}
             </div>

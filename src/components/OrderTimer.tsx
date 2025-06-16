@@ -28,14 +28,9 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
   }, [timeLeft, isConfirmed])
 
   useEffect(() => {
-    // Echtzeit-Subscription für Order-Status-Updates mit verbesserter Konfiguration
-    const channel = supabase
-      .channel(`timer-${orderId}`, {
-        config: {
-          broadcast: { self: true },
-          presence: { key: orderId }
-        }
-      })
+    // Echtzeit-Subscription für Order-Status-Updates
+    const subscription = supabase
+      .channel(`timer-${orderId}`)
       .on('postgres_changes', 
         { 
           event: 'UPDATE', 
@@ -44,7 +39,6 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
           filter: `id=eq.${orderId}`
         }, 
         (payload) => {
-          console.log('⏰ Timer: Order update received:', payload)
           const updatedOrder = payload.new as any
           if (updatedOrder.status !== 'pending') {
             setIsConfirmed(true)
@@ -52,13 +46,10 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
           }
         }
       )
-      .subscribe((status) => {
-        console.log('📡 Timer subscription status:', status)
-      })
+      .subscribe()
 
     return () => {
-      console.log('🔌 Timer: Unsubscribing')
-      supabase.removeChannel(channel)
+      subscription.unsubscribe()
     }
   }, [orderId, onConfirmation])
 
@@ -74,7 +65,7 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
 
   if (isConfirmed) {
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6 animate-bounce">
+      <div className="bg-green-50 border border-green-200 rounded-lg p-6 animate-pulse">
         <div className="flex items-center space-x-3">
           <div className="flex-shrink-0">
             <CheckCircle className="w-8 h-8 text-green-500" />

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
+import OrderCard from '../components/OrderCard'
+import AdminLogin from '../components/AdminLogin'
+import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
 
 const AdminPage: React.FC = () => {
@@ -9,15 +12,17 @@ const AdminPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
-  const [audioEnabled, setAudioEnabled] = useState(true)
+  const [audioEnabled, setAudioEnabled] = useState(false)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
-    // Echtzeit-Subscription für Bestellungen
-    const channel = supabase
-      .channel('admin-orders')
+    fetchOrders()
+    
+    // Subscription für neue Bestellungen mit sofortigem Update
+    const subscription = supabase
+      .channel('admin-orders-realtime')
       .on('postgres_changes', 
         { 
           event: '*', 
@@ -25,69 +30,47 @@ const AdminPage: React.FC = () => {
           table: 'orders' 
         }, 
         (payload) => {
-          console.log('🔔 Admin: Real-time order update:', payload)
+          console.log('Real-time order update:', payload)
           
-          try {
-            // Aktualisiere die gesamte Liste
-            fetchOrders()
+          if (payload.eventType === 'INSERT') {
+            const newOrder = payload.new as Order
+            setOrders(prev => [newOrder, ...prev])
             
-            // Wenn es eine neue Bestellung ist
-            if (payload.eventType === 'INSERT') {
-              // Browser Notification
-              if (Notification.permission === 'granted') {
-                new Notification('🔔 Neue Bestellung!', {
-                  body: `Bestellung ${payload.new.id} wurde aufgegeben`,
-                  icon: '/icon-192x192.png',
-                  tag: 'new-order',
-                  requireInteraction: true
-                })
-              }
-              
-              // Akustisches Signal
-              playNewOrderSound()
+            // Sofortiger Ton bei neuer Bestellung
+            if (audioEnabled) {
+              playNotificationSound()
             }
-          } catch (error) {
-            console.error('Error fetching orders:', error)
+            
+            // Browser Notification
+            if (Notification.permission === 'granted') {
+              new Notification('Neue Bestellung!', {
+                body: `${newOrder.customer_name} hat eine Bestellung aufgegeben`,
+                icon: '/icon-192x192.png'
+              })
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedOrder = payload.new as Order
+            setOrders(prev => prev.map(order => 
+              order.id === updatedOrder.id ? updatedOrder : order
+            ))
+          } else if (payload.eventType === 'DELETE') {
+            const deletedOrder = payload.old as Order
+            setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
           }
         }
       )
-      .subscribe((status: any) => {
-        console.log('📡 Admin subscription status:', status)
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to real-time updates')
-        }
-      })
+      .subscribe()
 
-    // Initialer Datenlad
-    fetchOrders()
+    // Notification Permission anfragen
+    if (Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
 
     return () => {
-      console.log('🔌 Unsubscribing from orders')
-      supabase.removeChannel(channel)
+      subscription.unsubscribe()
     }
-  }, [isAdminAuthenticated])
+  }, [audioEnabled, isAdminAuthenticated])
 
-  // Automatische Aktualisierung alle 5 Sekunden
-  useEffect(() => {
-    if (!isAdminAuthenticated) return
-
-    const interval = setInterval(() => {
-      fetchOrders()
-    }, 5000) // 5 Sekunden
-
-    return () => clearInterval(interval)
-  }, [isAdminAuthenticated])
-
-  // Funktion zum Abspielen eines neuen Bestellungs-Tons
-  const playNewOrderSound = () => {
-    if (!audioEnabled) return
-
-    const audio = new Audio('/sounds/new-order.mp3')
-    audio.play()
-      .catch(error => console.error('Error playing sound:', error))
-  }
-
-  // Hauptfunktion zum Laden der Bestellungen
   const fetchOrders = async () => {
     try {
       const { data, error } = await supabase
@@ -104,10 +87,30 @@ const AdminPage: React.FC = () => {
     }
   }
 
-  // Notification Permission anfragen
-  if (Notification.permission === 'default') {
-    Notification.requestPermission()
-  }
+  const playNotificationSound = () => {
+    try {
+      // Erstelle einen professionellen Benachrichtigungston
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      // Melodischer Ton für neue Bestellungen
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3)
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
+    } catch (error) {
+      console.log('Could not play notification sound:', error)
+    }
   }
 
   const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
@@ -124,12 +127,10 @@ const AdminPage: React.FC = () => {
     return <AdminLogin />
   }
 
-  // Filter orders based on status
   const filteredOrders = statusFilter === 'all' 
     ? orders 
     : orders.filter(order => order.status === statusFilter)
 
-  // Get count of orders with specific status
   const getStatusCount = (status: Order['status']) => {
     return orders.filter(order => order.status === status).length
   }
@@ -168,7 +169,7 @@ const AdminPage: React.FC = () => {
                   }`}
                 >
                   <Bell className="w-4 h-4" />
-                  <span>{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
+                  <span>{audioEnabled ? 'Ton an' : 'Ton aus'}</span>
                 </button>
 
                 <button
@@ -204,7 +205,7 @@ const AdminPage: React.FC = () => {
             <Bell className="w-4 h-4" />
             <span>Bestellungen</span>
             {orders.filter(o => o.status === 'pending').length > 0 && (
-              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                 {orders.filter(o => o.status === 'pending').length}
               </span>
             )}
@@ -252,7 +253,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  🔔 Neu ({getStatusCount('pending')})
+                  Neu ({getStatusCount('pending')})
                 </button>
 
                 <button
@@ -263,7 +264,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  ✅ Bestätigt ({getStatusCount('confirmed')})
+                  Bestätigt ({getStatusCount('confirmed')})
                 </button>
 
                 <button
@@ -274,7 +275,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  🍽️ Bereit ({getStatusCount('ready')})
+                  Bereit ({getStatusCount('ready')})
                 </button>
 
                 <button
@@ -285,7 +286,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  👍 Abgeholt ({getStatusCount('completed')})
+                  Abgeholt ({getStatusCount('completed')})
                 </button>
               </div>
             </div>
@@ -301,7 +302,7 @@ const AdminPage: React.FC = () => {
                 </h3>
                 <p className="text-gray-600">
                   {statusFilter === 'all' 
-                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch mit Ton.'
+                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch.'
                     : 'Bestellungen mit diesem Status werden hier angezeigt.'
                   }
                 </p>
