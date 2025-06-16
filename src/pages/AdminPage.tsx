@@ -124,38 +124,38 @@ const AdminPage: React.FC = () => {
   }
 
   const playNewOrderSound = (type: 'default' | 'alert' | 'notification' | 'ping' | 'none') => {
-    if (!audioEnabled || type === 'none') return
+    if (!audioEnabled || type === 'none') return;
 
-    const audioCtx = new AudioContext()
-    const oscillator = audioCtx.createOscillator()
-    
-    // Get sound configuration
-    const config = soundConfig[type]
-    let currentTime = 0
-
-    // Create and connect gain node for volume control
-    const gainNode = audioCtx.createGain()
-    gainNode.gain.value = 0.7 // 70% volume for louder sound
-    oscillator.connect(gainNode)
-    gainNode.connect(audioCtx.destination)
-
-    // Play each tone in sequence
-    config.frequencies.forEach((frequency, index) => {
-      oscillator.frequency.value = frequency
-      oscillator.start(currentTime)
-      oscillator.stop(currentTime + config.durations[index])
-      currentTime += config.delays[index] / 1000
-    })
-
-    // Start the oscillator
-    oscillator.start()
-    // Stop after the last tone
-    oscillator.stop(currentTime + config.durations[config.durations.length - 1])
-      })
+    try {
+      const audioCtx = new AudioContext();
+      const oscillator = audioCtx.createOscillator();
       
+      // Get sound configuration
+      const config = soundConfig[type];
+      let currentTime = 0;
+
+      // Create and connect gain node for volume control
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0.7; // 70% volume for louder sound
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      // Play each tone in sequence
+      config.frequencies.forEach((frequency, index) => {
+        oscillator.frequency.value = frequency;
+        oscillator.start(currentTime);
+        oscillator.stop(currentTime + config.durations[index]);
+        currentTime += config.delays[index] / 1000;
+      });
+
+      // Start the oscillator
+      oscillator.start();
+      // Stop after the last tone
+      oscillator.stop(currentTime + config.durations[config.durations.length - 1]);
     } catch (error) {
-      console.log('Could not play notification sound:', error)
+      console.log('Could not play notification sound:', error);
     }
+  };
   }
 
   const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
