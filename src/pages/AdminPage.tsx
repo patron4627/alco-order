@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, ChangeEvent } from 'react'
 import { LogOut, Settings } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../context/AuthContext'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
 import OrderCard from '../components/OrderCard'
