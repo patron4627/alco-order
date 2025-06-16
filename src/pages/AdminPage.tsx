@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
-import { Order } from '../types'
+import { Order, RealtimePayload } from '../types'
 import { supabase } from '../lib/supabase'
 import OrderCard from '../components/OrderCard'
 import AdminLogin from '../components/AdminLogin'
@@ -16,6 +16,26 @@ const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
   const [retryAttempt, setRetryAttempt] = useState(0)
+  const [soundType, setSoundType] = useState<'default' | 'alert' | 'notification' | 'none'>('notification')
+
+  // Sound configuration
+  const soundConfig = {
+    default: {
+      frequencies: [800, 1000, 800],
+      durations: [0.2, 0.2, 0.3],
+      delays: [0, 300, 600]
+    },
+    alert: {
+      frequencies: [1200, 1400, 1200],
+      durations: [0.1, 0.1, 0.2],
+      delays: [0, 200, 400]
+    },
+    notification: {
+      frequencies: [600, 800, 600],
+      durations: [0.3, 0.3, 0.4],
+      delays: [0, 500, 1000]
+    }
+  }
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
@@ -23,32 +43,21 @@ const AdminPage: React.FC = () => {
     fetchOrders()
     const cleanup = setupRealtimeSubscription()
     
-    // Notification Permission anfragen
-    if (Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-
     return cleanup
   }, [isAdminAuthenticated, retryAttempt])
 
   const fetchOrders = async () => {
     try {
-      console.log('📥 Fetching orders...')
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('❌ Error fetching orders:', error)
-        throw error
-      }
-      
-      console.log('✅ Orders fetched:', data?.length || 0)
+      if (error) throw error
       setOrders(data || [])
+      setLoading(false)
     } catch (error) {
       console.error('Error fetching orders:', error)
-    } finally {
       setLoading(false)
     }
   }
@@ -65,54 +74,27 @@ const AdminPage: React.FC = () => {
           schema: 'public',
           table: 'orders'
         },
-        (payload) => {
+        (payload: RealtimePayload) => {
           console.log('🔔 Realtime event received:', payload.eventType, payload)
           setConnectionStatus('connected')
           
-          if (payload.eventType === 'INSERT') {
-            const newOrder = payload.new as Order
-            console.log('➕ New order received:', newOrder.id)
-            
-            setOrders(prev => {
-              // Prüfe ob Order bereits existiert
-              const exists = prev.find(order => order.id === newOrder.id)
-              if (exists) {
-                console.log('⚠️ Order already exists, skipping')
-                return prev
+          // Handle different types of events
+          switch (payload.eventType) {
+            case 'INSERT':
+              const newOrder = payload.new
+              console.log('➕ New order received:', newOrder.id)
+              setOrders(prev => [...prev, newOrder])
+              if (audioEnabled && soundType !== 'none') {
+                playNewOrderSound(soundType)
               }
-              console.log('✅ Adding new order to list')
-              return [newOrder, ...prev]
-            })
-            
-            // Sofortiger Signalton
-            if (audioEnabled) {
-              console.log('🔊 Playing notification sound')
-              playNewOrderSound()
-            }
-            
-            // Browser Notification
-            if (Notification.permission === 'granted') {
-              new Notification('🔔 Neue Bestellung!', {
-                body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                icon: '/icon-192x192.png',
-                tag: 'new-order-' + newOrder.id,
-                requireInteraction: true
-              })
-            }
-            
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedOrder = payload.new as Order
-            console.log('🔄 Order updated:', updatedOrder.id, updatedOrder.status)
-            
-            setOrders(prev => prev.map(order => 
-              order.id === updatedOrder.id ? updatedOrder : order
-            ))
-            
-          } else if (payload.eventType === 'DELETE') {
-            const deletedOrder = payload.old as Order
-            console.log('🗑️ Order deleted:', deletedOrder.id)
-            
-            setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
+              break;
+            case 'UPDATE':
+              const updatedOrder = payload.new
+              console.log('🔄 Order updated:', updatedOrder.id)
+              setOrders(prev => 
+                prev.map(order => order.id === updatedOrder.id ? updatedOrder : order)
+              )
+              break;
           }
         }
       )
@@ -123,10 +105,12 @@ const AdminPage: React.FC = () => {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Successfully subscribed to realtime updates')
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error, retrying in 5 seconds...')
+          console.error('❌ Channel error, retrying in 2 seconds...')
+          const retryInterval = Math.min(30000, 2000 * (retryAttempt + 1)) // Exponential backoff
           setTimeout(() => {
             setRetryAttempt(prev => prev + 1)
-          }, 5000)
+            setupRealtimeSubscription() // Restart subscription
+          }, retryInterval)
         }
       })
 
@@ -137,8 +121,10 @@ const AdminPage: React.FC = () => {
     }
   }
 
-  const playNewOrderSound = () => {
+  const playNewOrderSound = (type: 'default' | 'alert' | 'notification') => {
     try {
+      const config = soundConfig[type]
+      
       // Erstelle mehrere Töne für bessere Aufmerksamkeit
       const playTone = (frequency: number, duration: number, delay: number = 0) => {
         setTimeout(() => {
@@ -158,10 +144,10 @@ const AdminPage: React.FC = () => {
         }, delay)
       }
       
-      // Spiele eine Sequenz von Tönen
-      playTone(800, 0.2, 0)
-      playTone(1000, 0.2, 300)
-      playTone(800, 0.3, 600)
+      // Spiele die Töne in der angegebenen Konfiguration
+      config.frequencies.forEach((freq, index) => {
+        playTone(freq, config.durations[index], config.delays[index])
+      })
       
     } catch (error) {
       console.log('Could not play notification sound:', error)
@@ -250,13 +236,35 @@ const AdminPage: React.FC = () => {
               </>
             )}
 
-            <button
-              onClick={handleLogout}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Abmelden</span>
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Bell className="h-5 w-5" />
+                <button
+                  onClick={() => playNewOrderSound(soundType)}
+                  className="px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+                  title="Test-Ton abspielen"
+                >
+                  Test-Ton
+                </button>
+                <select
+                  value={soundType}
+                  onChange={(e) => setSoundType(e.target.value as 'default' | 'alert' | 'notification' | 'none')}
+                  className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="default">Standard</option>
+                  <option value="notification">Benachrichtigung</option>
+                  <option value="alert">Alarm</option>
+                  <option value="none">Kein Ton</option>
+                </select>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                <LogOut className="mr-2 h-5 w-5" />
+                Abmelden
+              </button>
+            </div>
           </div>
         </div>
 
@@ -273,72 +281,6 @@ const AdminPage: React.FC = () => {
             <Bell className="w-4 h-4" />
             <span>Bestellungen</span>
             {orders.filter(o => o.status === 'pending').length > 0 && (
-              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
-                {orders.filter(o => o.status === 'pending').length}
-              </span>
-            )}
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('menu')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
-              activeTab === 'menu'
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            <span>Menü verwalten</span>
-          </button>
-        </div>
-
-        {activeTab === 'orders' ? (
-          <>
-            {/* Status Filter */}
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <div className="flex items-center space-x-4 overflow-x-auto">
-                <div className="flex items-center space-x-2">
-                  <Filter className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm font-medium text-gray-700">Filter:</span>
-                </div>
-                
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Alle ({orders.length})
-                </button>
-
-                <button
-                  onClick={() => setStatusFilter('pending')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'pending'
-                      ? 'bg-yellow-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  🔔 Neu ({getStatusCount('pending')})
-                </button>
-
-                <button
-                  onClick={() => setStatusFilter('confirmed')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'confirmed'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  ✅ Bestätigt ({getStatusCount('confirmed')})
-                </button>
-
-                <button
-                  onClick={() => setStatusFilter('ready')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'ready'
                       ? 'bg-green-500 text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}

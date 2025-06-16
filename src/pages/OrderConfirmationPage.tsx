@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { CheckCircle, Clock, Phone, User, Home } from 'lucide-react'
-import { Order } from '../types'
+import { Order, RealtimePayload } from '../types'
 import { supabase } from '../lib/supabase'
 import OrderTimer from '../components/OrderTimer'
 
@@ -13,17 +13,13 @@ const OrderConfirmationPage: React.FC = () => {
   const [showTimer, setShowTimer] = useState(true)
   const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
   const [retryAttempt, setRetryAttempt] = useState(0)
+  const [successMessage, setSuccessMessage] = useState('')
 
   useEffect(() => {
     if (orderId) {
       fetchOrder()
       const cleanup = setupRealtimeSubscription()
       
-      // Notification Permission anfragen
-      if (Notification.permission === 'default') {
-        Notification.requestPermission()
-      }
-
       return cleanup
     }
   }, [orderId, retryAttempt])
@@ -32,23 +28,17 @@ const OrderConfirmationPage: React.FC = () => {
     if (!orderId) return
 
     try {
-      console.log('📥 Fetching order:', orderId)
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .eq('id', orderId)
         .single()
 
-      if (error) {
-        console.error('❌ Error fetching order:', error)
-        throw error
-      }
-      
-      console.log('✅ Order fetched:', data)
+      if (error) throw error
       setOrder(data)
       
-      // Timer nur anzeigen wenn Status noch pending ist
-      if (data.status !== 'pending') {
+      // Hide timer if status is not pending
+      if (data?.status !== 'pending') {
         setShowTimer(false)
       }
     } catch (error) {
@@ -73,32 +63,29 @@ const OrderConfirmationPage: React.FC = () => {
           table: 'orders',
           filter: `id=eq.${orderId}`
         },
-        (payload) => {
+        (payload: RealtimePayload) => {
           console.log('🔔 OrderConfirmation: Order update received:', payload)
           setConnectionStatus('connected')
           
-          const updatedOrder = payload.new as Order
-          console.log('📋 Updated order status:', updatedOrder.status)
+          const updatedOrder = payload.new
           
+          // Update order state
           setOrder(updatedOrder)
           
-          // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
+          // Hide timer if status is not pending
           if (updatedOrder.status !== 'pending') {
-            console.log('✅ Order confirmed! Hiding timer...')
             setShowTimer(false)
-            
-            // Browser-Benachrichtigung
-            if (Notification.permission === 'granted') {
-              new Notification('🎉 Bestellung bestätigt!', {
-                body: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
-                icon: '/icon-192x192.png',
-                tag: 'order-confirmed-' + orderId
-              })
-            }
-            
-            // Bestätigungston
-            playNotificationSound()
           }
+          
+          // Show success message for confirmed status
+          if (updatedOrder.status === 'confirmed') {
+            setShowTimer(false)
+            setSuccessMessage('✅ Bestellung bestätigt!')
+            setTimeout(() => setSuccessMessage(''), 3000)
+          }
+          
+          // Play notification sound
+          playNotificationSound()
         }
       )
       .subscribe((status) => {
@@ -106,13 +93,16 @@ const OrderConfirmationPage: React.FC = () => {
         setConnectionStatus(status)
         
         if (status === 'CHANNEL_ERROR') {
-          console.error('❌ OrderConfirmation: Channel error, retrying...')
+          console.error('❌ OrderConfirmation: Channel error, retrying in 2 seconds...')
+          const retryInterval = Math.min(30000, 2000 * (retryAttempt + 1)) // Exponential backoff
           setTimeout(() => {
             setRetryAttempt(prev => prev + 1)
-          }, 3000)
+            setupRealtimeSubscription() // Restart subscription
+          }, retryInterval)
         }
       })
 
+    // Cleanup function
     return () => {
       console.log('🔌 OrderConfirmation: Unsubscribing')
       supabase.removeChannel(channel)
