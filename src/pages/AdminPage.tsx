@@ -12,73 +12,39 @@ const AdminPage: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
-  const [audioEnabled, setAudioEnabled] = useState(false)
+  const [audioEnabled, setAudioEnabled] = useState(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
+  const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
+  const [retryAttempt, setRetryAttempt] = useState(0)
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
     fetchOrders()
+    const cleanup = setupRealtimeSubscription()
     
-    // Subscription für neue Bestellungen mit sofortigem Update
-    const subscription = supabase
-      .channel('admin-orders-realtime')
-      .on('postgres_changes', 
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'orders' 
-        }, 
-        (payload) => {
-          console.log('Real-time order update:', payload)
-          
-          if (payload.eventType === 'INSERT') {
-            const newOrder = payload.new as Order
-            setOrders(prev => [newOrder, ...prev])
-            
-            // Sofortiger Ton bei neuer Bestellung
-            if (audioEnabled) {
-              playNotificationSound()
-            }
-            
-            // Browser Notification
-            if (Notification.permission === 'granted') {
-              new Notification('Neue Bestellung!', {
-                body: `${newOrder.customer_name} hat eine Bestellung aufgegeben`,
-                icon: '/icon-192x192.png'
-              })
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedOrder = payload.new as Order
-            setOrders(prev => prev.map(order => 
-              order.id === updatedOrder.id ? updatedOrder : order
-            ))
-          } else if (payload.eventType === 'DELETE') {
-            const deletedOrder = payload.old as Order
-            setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
-          }
-        }
-      )
-      .subscribe()
-
     // Notification Permission anfragen
     if (Notification.permission === 'default') {
       Notification.requestPermission()
     }
 
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [audioEnabled, isAdminAuthenticated])
+    return cleanup
+  }, [isAdminAuthenticated, retryAttempt])
 
   const fetchOrders = async () => {
     try {
+      console.log('📥 Fetching orders...')
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error fetching orders:', error)
+        throw error
+      }
+      
+      console.log('✅ Orders fetched:', data?.length || 0)
       setOrders(data || [])
     } catch (error) {
       console.error('Error fetching orders:', error)
@@ -87,27 +53,116 @@ const AdminPage: React.FC = () => {
     }
   }
 
-  const playNotificationSound = () => {
+  const setupRealtimeSubscription = () => {
+    console.log('🔄 Setting up realtime subscription...')
+    
+    const channel = supabase
+      .channel('admin-orders-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders'
+        },
+        (payload) => {
+          console.log('🔔 Realtime event received:', payload.eventType, payload)
+          setConnectionStatus('connected')
+          
+          if (payload.eventType === 'INSERT') {
+            const newOrder = payload.new as Order
+            console.log('➕ New order received:', newOrder.id)
+            
+            setOrders(prev => {
+              // Prüfe ob Order bereits existiert
+              const exists = prev.find(order => order.id === newOrder.id)
+              if (exists) {
+                console.log('⚠️ Order already exists, skipping')
+                return prev
+              }
+              console.log('✅ Adding new order to list')
+              return [newOrder, ...prev]
+            })
+            
+            // Sofortiger Signalton
+            if (audioEnabled) {
+              console.log('🔊 Playing notification sound')
+              playNewOrderSound()
+            }
+            
+            // Browser Notification
+            if (Notification.permission === 'granted') {
+              new Notification('🔔 Neue Bestellung!', {
+                body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
+                icon: '/icon-192x192.png',
+                tag: 'new-order-' + newOrder.id,
+                requireInteraction: true
+              })
+            }
+            
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedOrder = payload.new as Order
+            console.log('🔄 Order updated:', updatedOrder.id, updatedOrder.status)
+            
+            setOrders(prev => prev.map(order => 
+              order.id === updatedOrder.id ? updatedOrder : order
+            ))
+            
+          } else if (payload.eventType === 'DELETE') {
+            const deletedOrder = payload.old as Order
+            console.log('🗑️ Order deleted:', deletedOrder.id)
+            
+            setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status)
+        setConnectionStatus(status)
+        
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to realtime updates')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Channel error, retrying in 5 seconds...')
+          setTimeout(() => {
+            setRetryAttempt(prev => prev + 1)
+          }, 5000)
+        }
+      })
+
+    // Cleanup function
+    return () => {
+      console.log('🔌 Unsubscribing from channel')
+      supabase.removeChannel(channel)
+    }
+  }
+
+  const playNewOrderSound = () => {
     try {
-      // Erstelle einen professionellen Benachrichtigungston
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
+      // Erstelle mehrere Töne für bessere Aufmerksamkeit
+      const playTone = (frequency: number, duration: number, delay: number = 0) => {
+        setTimeout(() => {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+          
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+          
+          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime)
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+          
+          oscillator.start(audioContext.currentTime)
+          oscillator.stop(audioContext.currentTime + duration)
+        }, delay)
+      }
       
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
+      // Spiele eine Sequenz von Tönen
+      playTone(800, 0.2, 0)
+      playTone(1000, 0.2, 300)
+      playTone(800, 0.3, 600)
       
-      // Melodischer Ton für neue Bestellungen
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3)
-      
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
     } catch (error) {
       console.log('Could not play notification sound:', error)
     }
@@ -155,6 +210,19 @@ const AdminPage: React.FC = () => {
             <p className="text-gray-600">
               {activeTab === 'orders' ? 'Verwalten Sie eingehende Bestellungen' : 'Verwalten Sie Ihr Menü'}
             </p>
+            {/* Connection Status Indicator */}
+            <div className="flex items-center space-x-2 mt-2">
+              <div className={`w-2 h-2 rounded-full ${
+                connectionStatus === 'SUBSCRIBED' ? 'bg-green-500 animate-pulse' : 
+                connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
+                'bg-red-500'
+              }`}></div>
+              <span className="text-xs text-gray-500">
+                {connectionStatus === 'SUBSCRIBED' ? '🟢 Echtzeit aktiv' : 
+                 connectionStatus === 'connecting' ? '🟡 Verbinde...' : 
+                 '🔴 Verbindung getrennt'}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center space-x-4">
@@ -169,7 +237,7 @@ const AdminPage: React.FC = () => {
                   }`}
                 >
                   <Bell className="w-4 h-4" />
-                  <span>{audioEnabled ? 'Ton an' : 'Ton aus'}</span>
+                  <span>{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
                 </button>
 
                 <button
@@ -205,7 +273,7 @@ const AdminPage: React.FC = () => {
             <Bell className="w-4 h-4" />
             <span>Bestellungen</span>
             {orders.filter(o => o.status === 'pending').length > 0 && (
-              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
                 {orders.filter(o => o.status === 'pending').length}
               </span>
             )}
@@ -253,7 +321,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Neu ({getStatusCount('pending')})
+                  🔔 Neu ({getStatusCount('pending')})
                 </button>
 
                 <button
@@ -264,7 +332,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Bestätigt ({getStatusCount('confirmed')})
+                  ✅ Bestätigt ({getStatusCount('confirmed')})
                 </button>
 
                 <button
@@ -275,7 +343,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Bereit ({getStatusCount('ready')})
+                  🍽️ Bereit ({getStatusCount('ready')})
                 </button>
 
                 <button
@@ -286,7 +354,7 @@ const AdminPage: React.FC = () => {
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Abgeholt ({getStatusCount('completed')})
+                  👍 Abgeholt ({getStatusCount('completed')})
                 </button>
               </div>
             </div>
@@ -302,10 +370,17 @@ const AdminPage: React.FC = () => {
                 </h3>
                 <p className="text-gray-600">
                   {statusFilter === 'all' 
-                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch.'
+                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch mit Ton.'
                     : 'Bestellungen mit diesem Status werden hier angezeigt.'
                   }
                 </p>
+                {connectionStatus !== 'SUBSCRIBED' && (
+                  <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-yellow-800 text-sm">
+                      ⚠️ Echtzeit-Verbindung nicht aktiv. Neue Bestellungen werden möglicherweise nicht automatisch angezeigt.
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">

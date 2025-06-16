@@ -11,67 +11,40 @@ const OrderConfirmationPage: React.FC = () => {
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [showTimer, setShowTimer] = useState(true)
+  const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
+  const [retryAttempt, setRetryAttempt] = useState(0)
 
   useEffect(() => {
     if (orderId) {
       fetchOrder()
+      const cleanup = setupRealtimeSubscription()
       
-      // Echtzeit-Subscription für Order-Updates
-      const subscription = supabase
-        .channel(`order-${orderId}`)
-        .on('postgres_changes', 
-          { 
-            event: 'UPDATE', 
-            schema: 'public', 
-            table: 'orders',
-            filter: `id=eq.${orderId}`
-          }, 
-          (payload) => {
-            console.log('Order update received:', payload)
-            const updatedOrder = payload.new as Order
-            setOrder(updatedOrder)
-            
-            // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
-            if (updatedOrder.status !== 'pending') {
-              setShowTimer(false)
-              
-              // Browser-Benachrichtigung
-              if (Notification.permission === 'granted') {
-                new Notification('Bestellung bestätigt!', {
-                  body: `Ihre Bestellung wurde bestätigt und wird zubereitet.`,
-                  icon: '/icon-192x192.png'
-                })
-              }
-              
-              // Akustisches Signal
-              playNotificationSound()
-            }
-          }
-        )
-        .subscribe()
-
       // Notification Permission anfragen
       if (Notification.permission === 'default') {
         Notification.requestPermission()
       }
 
-      return () => {
-        subscription.unsubscribe()
-      }
+      return cleanup
     }
-  }, [orderId])
+  }, [orderId, retryAttempt])
 
   const fetchOrder = async () => {
     if (!orderId) return
 
     try {
+      console.log('📥 Fetching order:', orderId)
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .eq('id', orderId)
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error fetching order:', error)
+        throw error
+      }
+      
+      console.log('✅ Order fetched:', data)
       setOrder(data)
       
       // Timer nur anzeigen wenn Status noch pending ist
@@ -85,24 +58,90 @@ const OrderConfirmationPage: React.FC = () => {
     }
   }
 
+  const setupRealtimeSubscription = () => {
+    if (!orderId) return () => {}
+
+    console.log('🔄 OrderConfirmation: Setting up realtime subscription for:', orderId)
+    
+    const channel = supabase
+      .channel(`order-confirmation-${orderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${orderId}`
+        },
+        (payload) => {
+          console.log('🔔 OrderConfirmation: Order update received:', payload)
+          setConnectionStatus('connected')
+          
+          const updatedOrder = payload.new as Order
+          console.log('📋 Updated order status:', updatedOrder.status)
+          
+          setOrder(updatedOrder)
+          
+          // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
+          if (updatedOrder.status !== 'pending') {
+            console.log('✅ Order confirmed! Hiding timer...')
+            setShowTimer(false)
+            
+            // Browser-Benachrichtigung
+            if (Notification.permission === 'granted') {
+              new Notification('🎉 Bestellung bestätigt!', {
+                body: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
+                icon: '/icon-192x192.png',
+                tag: 'order-confirmed-' + orderId
+              })
+            }
+            
+            // Bestätigungston
+            playNotificationSound()
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 OrderConfirmation subscription status:', status)
+        setConnectionStatus(status)
+        
+        if (status === 'CHANNEL_ERROR') {
+          console.error('❌ OrderConfirmation: Channel error, retrying...')
+          setTimeout(() => {
+            setRetryAttempt(prev => prev + 1)
+          }, 3000)
+        }
+      })
+
+    return () => {
+      console.log('🔌 OrderConfirmation: Unsubscribing')
+      supabase.removeChannel(channel)
+    }
+  }
+
   const playNotificationSound = () => {
-    // Erstelle einen einfachen Benachrichtigungston
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    
-    oscillator.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-    
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1)
-    oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2)
-    
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
-    
-    oscillator.start(audioContext.currentTime)
-    oscillator.stop(audioContext.currentTime + 0.3)
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      // Freudiger Bestätigungston
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.1)
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.2)
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.3)
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
+    } catch (error) {
+      console.log('Could not play notification sound:', error)
+    }
   }
 
   const formatTime = (timeString: string) => {
@@ -126,21 +165,21 @@ const OrderConfirmationPage: React.FC = () => {
         }
       case 'confirmed':
         return {
-          title: 'Bestellung bestätigt!',
+          title: '🎉 Bestellung bestätigt!',
           message: 'Ihre Bestellung wird zubereitet und ist pünktlich zur Abholzeit fertig.',
           color: 'text-blue-600',
           bgColor: 'bg-blue-100'
         }
       case 'ready':
         return {
-          title: 'Bestellung ist bereit!',
+          title: '✅ Bestellung ist bereit!',
           message: 'Ihre Bestellung ist fertig und kann abgeholt werden.',
           color: 'text-green-600',
           bgColor: 'bg-green-100'
         }
       case 'completed':
         return {
-          title: 'Bestellung abgeholt!',
+          title: '👍 Bestellung abgeholt!',
           message: 'Vielen Dank für Ihren Besuch. Wir freuen uns auf Ihren nächsten Besuch!',
           color: 'text-gray-600',
           bgColor: 'bg-gray-100'
@@ -202,6 +241,20 @@ const OrderConfirmationPage: React.FC = () => {
           <p className="text-gray-600">
             {statusInfo.message}
           </p>
+          
+          {/* Connection Status */}
+          <div className="flex items-center justify-center space-x-2 mt-4">
+            <div className={`w-2 h-2 rounded-full ${
+              connectionStatus === 'SUBSCRIBED' ? 'bg-green-500 animate-pulse' : 
+              connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
+              'bg-red-500'
+            }`}></div>
+            <span className="text-xs text-gray-500">
+              {connectionStatus === 'SUBSCRIBED' ? '🟢 Echtzeit aktiv' : 
+               connectionStatus === 'connecting' ? '🟡 Verbinde...' : 
+               '🔴 Verbindung getrennt'}
+            </span>
+          </div>
         </div>
 
         {/* Timer Component - nur anzeigen wenn Status pending ist */}
@@ -251,13 +304,16 @@ const OrderConfirmationPage: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Ihre Artikel</h3>
             <div className="space-y-3">
               {order.items.map((item, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <div>
+                <div key={index} className="flex justify-between items-start">
+                  <div className="flex-1">
                     <span className="font-medium">{item.quantity}x {item.name}</span>
-                    {item.options && item.options.length > 0 && (
-                      <div className="text-sm text-gray-600 ml-4">
-                        {item.options.map((option, optIndex) => (
-                          <div key={optIndex}>+ {option.name} (+{option.price.toFixed(2)}€)</div>
+                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                      <div className="text-sm text-gray-600 ml-4 mt-1">
+                        {item.selectedOptions.map((option, optIndex) => (
+                          <div key={optIndex} className="flex justify-between">
+                            <span>+ {option.name}</span>
+                            <span>+{option.price.toFixed(2)}€</span>
+                          </div>
                         ))}
                       </div>
                     )}

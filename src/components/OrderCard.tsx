@@ -41,9 +41,16 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
   const handleStatusUpdate = async (newStatus: Order['status']) => {
     try {
+      const updateData: any = { status: newStatus }
+      
+      // Setze ready_at wenn Status auf 'ready' geändert wird
+      if (newStatus === 'ready') {
+        updateData.ready_at = new Date().toISOString()
+      }
+
       const { error } = await supabase
         .from('orders')
-        .update({ status: newStatus })
+        .update(updateData)
         .eq('id', order.id)
 
       if (error) throw error
@@ -112,11 +119,24 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
       <div className="border-t pt-4 mb-4">
         <h4 className="font-medium text-gray-900 mb-2">Bestellte Artikel:</h4>
-        <div className="space-y-1">
+        <div className="space-y-2">
           {order.items.map((item, index) => (
-            <div key={index} className="flex justify-between text-sm">
-              <span>{item.quantity}x {item.name}</span>
-              <span>{(item.price * item.quantity).toFixed(2)}€</span>
+            <div key={index} className="text-sm">
+              <div className="flex justify-between">
+                <span className="font-medium">{item.quantity}x {item.name}</span>
+                <span>{(item.price * item.quantity).toFixed(2)}€</span>
+              </div>
+              {/* Zeige gewählte Optionen an */}
+              {item.selectedOptions && item.selectedOptions.length > 0 && (
+                <div className="ml-4 mt-1 space-y-1">
+                  {item.selectedOptions.map((option, optIndex) => (
+                    <div key={optIndex} className="flex justify-between text-xs text-gray-600">
+                      <span>+ {option.name}</span>
+                      <span>+{option.price.toFixed(2)}€</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -143,6 +163,9 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
       <div className="text-xs text-gray-500 mt-2">
         Bestellt: {formatTime(order.created_at)}
+        {order.ready_at && (
+          <span className="ml-2">• Bereit: {formatTime(order.ready_at)}</span>
+        )}
       </div>
     </div>
   )

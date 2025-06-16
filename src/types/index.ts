@@ -29,6 +29,7 @@ export interface Order {
   items: CartItem[]
   notes?: string
   created_at: string
+  ready_at?: string
 }
 
 export interface OrderItem {
@@ -36,5 +37,5 @@ export interface OrderItem {
   name: string
   price: number
   quantity: number
-  options?: MenuOption[]
+  selectedOptions?: MenuOption[]
 }

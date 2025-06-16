@@ -5,6 +5,19 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+export type MenuOption = {
+  name: string
+  price: number
+}
+
+export type OrderItem = {
+  id: string
+  name: string
+  price: number
+  quantity: number
+  options?: MenuOption[]
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -17,6 +30,7 @@ export type Database = {
           category: string
           image_url: string | null
           available: boolean
+          options?: MenuOption[]
           created_at: string
         }
         Insert: {
@@ -27,6 +41,7 @@ export type Database = {
           category: string
           image_url?: string | null
           available?: boolean
+          options?: MenuOption[]
           created_at?: string
         }
         Update: {
@@ -37,6 +52,7 @@ export type Database = {
           category?: string
           image_url?: string | null
           available?: boolean
+          options?: MenuOption[]
           created_at?: string
         }
       }
@@ -48,8 +64,9 @@ export type Database = {
           pickup_time: string
           status: 'pending' | 'confirmed' | 'ready' | 'completed'
           total_amount: number
-          items: any[]
+          items: OrderItem[]
           notes: string | null
+          ready_at: string | null
           created_at: string
         }
         Insert: {
@@ -59,8 +76,9 @@ export type Database = {
           pickup_time: string
           status?: 'pending' | 'confirmed' | 'ready' | 'completed'
           total_amount: number
-          items: any[]
+          items: OrderItem[]
           notes?: string | null
+          ready_at?: string | null
           created_at?: string
         }
         Update: {
@@ -70,8 +88,9 @@ export type Database = {
           pickup_time?: string
           status?: 'pending' | 'confirmed' | 'ready' | 'completed'
           total_amount?: number
-          items?: any[]
+          items?: OrderItem[]
           notes?: string | null
+          ready_at?: string | null
           created_at?: string
         }
       }
