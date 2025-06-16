@@ -1,55 +1,352 @@
 import React, { useState, useEffect } from 'react'
 import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
-import { Order, RealtimePayload } from '../types'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 import OrderCard from '../components/OrderCard'
 import AdminLogin from '../components/AdminLogin'
 import MenuManagement from '../components/MenuManagement'
-import { useAuth } from '../context/AuthContext'
+
+interface Order {
+  id: string
+  status: 'pending' | 'preparing' | 'ready' | 'completed'
+  [key: string]: any
+}
+
+type SoundType = 'default' | 'alert' | 'notification' | 'ping' | 'none'
+interface SoundConfig {
+  frequencies: number[]
+  durations: number[]
+  delays: number[]
+}
 
 const AdminPage: React.FC = () => {
-  const { isAdminAuthenticated, logout }: { isAdminAuthenticated: boolean, logout: () => void } = useAuth()
+  const { isAdminAuthenticated, logout } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState<boolean>(true)
-  const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'preparing' | 'ready' | 'completed'>('all')
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
-  const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
+  const [connectionStatus, setConnectionStatus] = useState<'SUBSCRIBED' | 'CHANNEL_ERROR' | 'connecting'>('connecting')
+  const [soundType, setSoundType] = useState<SoundType>('default')
   const [retryAttempt, setRetryAttempt] = useState<number>(0)
-  const [soundType, setSoundType] = useState<'default' | 'alert' | 'notification' | 'ping' | 'none'>('notification')
+  const [channel, setChannel] = useState<any>(null)
 
-  // Sound configuration
-  const soundConfig = {
+  const soundConfig: Record<SoundType, SoundConfig> = {
     default: {
-      frequencies: [440, 494, 523], // A4, B4, C5
+      frequencies: [440, 494, 523],
       durations: [0.1, 0.1, 0.1],
       delays: [0, 100, 200]
     },
     alert: {
-      frequencies: [261, 392, 523], // C4, G4, C5
+      frequencies: [261, 392, 523],
       durations: [0.2, 0.2, 0.2],
       delays: [0, 150, 300]
     },
     notification: {
-      frequencies: [330, 392, 440], // E4, G4, A4
+      frequencies: [330, 392, 440],
       durations: [0.15, 0.15, 0.15],
       delays: [0, 100, 200]
     },
     ping: {
-      frequencies: [659], // E5
+      frequencies: [659],
       durations: [0.1],
       delays: [0]
+    },
+    none: {
+      frequencies: [],
+      durations: [],
+      delays: []
     }
   }
 
+  const setupRealtimeSubscription = () => {
+    const channel = supabase
+      .channel('admin-orders-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders'
+        },
+        (payload: any) => {
+          console.log(' Realtime event received:', payload.eventType, payload)
+          setConnectionStatus('SUBSCRIBED')
+          if (payload.eventType === 'INSERT') {
+            const newOrder = payload.new as Order
+            setOrders(prev => [...prev, newOrder])
+            if (audioEnabled && soundType !== 'none') {
+              playNewOrderSound('ping')
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedOrder = payload.new as Order
+            setOrders(prev => prev.map(order => order.id === updatedOrder.id ? updatedOrder : order))
+            if (audioEnabled && soundType !== 'none' && updatedOrder.status !== 'pending') {
+              playNewOrderSound(soundType)
+            }
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log(' Subscription status:', status)
+        setConnectionStatus(status)
+        if (status === 'CHANNEL_ERROR') {
+          const retryInterval = Math.min(30000, 2000 * (retryAttempt + 1))
+          setTimeout(() => {
+            setRetryAttempt(prev => prev + 1)
+            setupRealtimeSubscription()
+          }, retryInterval)
+        }
+      })
+
+    return () => {
+      console.log(' Unsubscribing from channel')
+      supabase.removeChannel(channel)
+    }
+  }
+
+  const playNewOrderSound = (type: SoundType) => {
+    if (!audioEnabled || type === 'none') return
+    try {
+      const audioCtx = new AudioContext()
+      const oscillator = audioCtx.createOscillator()
+      const config = soundConfig[type]
+      let currentTime = 0
+      const gainNode = audioCtx.createGain()
+      gainNode.gain.value = 0.7
+      oscillator.connect(gainNode)
+      gainNode.connect(audioCtx.destination)
+      config.frequencies.forEach((frequency: number, index: number) => {
+        oscillator.frequency.value = frequency
+        oscillator.start(currentTime)
+        oscillator.stop(currentTime + config.durations[index])
+        currentTime += config.delays[index] / 1000
+      })
+      oscillator.start()
+      oscillator.stop(currentTime + config.durations[config.durations.length - 1])
+    } catch (error) {
+      console.error('Could not play notification sound:', error)
+    }
+  }
+
+  const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
+    const updatedOrders = orders.map(order => 
+      order.id === orderId ? { ...order, status: newStatus } : order
+    )
+    setOrders(updatedOrders)
+  }
+
+  const handleLogout = () => {
+    logout()
+    window.location.href = '/admin/login'
+  }
+
   useEffect(() => {
-    if (!isAdminAuthenticated) return
+    const fetchOrders = async () => {
+      try {
+        setLoading(true)
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        setOrders(data)
+      } catch (error) {
+        console.error('Error fetching orders:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
 
     fetchOrders()
-    const cleanup = setupRealtimeSubscription()
-    
-    return cleanup
-  }, [isAdminAuthenticated, retryAttempt])
+    setupRealtimeSubscription()
+
+    return () => {
+      setConnectionStatus('disconnected')
+    }
+  }, [retryAttempt])
+
+  if (!isAdminAuthenticated) {
+    return <AdminLogin />
+  }
+
+  const filteredOrders = statusFilter === 'all' ? orders : orders.filter(order => order.status === statusFilter)
+  const getStatusCount = (status: Order['status']): number => orders.filter(order => order.status === status).length
+
+  if (loading && activeTab === 'orders') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center space-x-2">
+          <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+          <span className="text-gray-600">Loading orders...</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+            <p className="text-gray-600">
+              Manage orders and menu items
+            </p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+              <LogOut className="h-5 w-5 mr-2" />
+              Logout
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-lg shadow-sm p-1 mb-6 inline-flex">
+          <button
+            onClick={() => setActiveTab('orders')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === 'orders'
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Bell className="h-5 w-5" />
+            Orders
+          </button>
+          <button
+            onClick={() => setActiveTab('menu')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === 'menu'
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Settings className="h-5 w-5" />
+            Menu
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'orders' ? (
+          <>
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'all' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setStatusFilter('pending')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'pending' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Pending ({getStatusCount('pending')})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('preparing')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'preparing' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Preparing ({getStatusCount('preparing')})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('ready')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'ready' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Ready ({getStatusCount('ready')})
+                </button>
+                <button
+                  onClick={() => setStatusFilter('completed')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'completed' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Completed ({getStatusCount('completed')})
+                </button>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={audioEnabled}
+                    onChange={(e) => setAudioEnabled(e.target.checked)}
+                    className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span>Enable Audio Notifications</span>
+                </div>
+                <select
+                  value={soundType}
+                  onChange={(e) => setSoundType(e.target.value as SoundType)}
+                  className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="default">Default</option>
+                  <option value="alert">Alert</option>
+                  <option value="notification">Notification</option>
+                  <option value="ping">Ping</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-6">
+              {filteredOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order} 
+                  onStatusChange={handleStatusUpdate}
+                />
+              ))}
+            </div>
+          </>
+        ) : (
+          <MenuManagement />
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default AdminPage
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        setLoading(true)
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        setOrders(data)
+      } catch (error) {
+        console.error('Error fetching orders:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchOrders()
+    setupRealtimeSubscription()
+
+    return () => {
+      setConnectionStatus('disconnected')
+    }
+  }, [retryAttempt])
 
   const fetchOrders = async () => {
     try {
@@ -59,7 +356,7 @@ const AdminPage: React.FC = () => {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setOrders(data || [])
+      setOrders(data)
       setLoading(false)
     } catch (error) {
       console.error('Error fetching orders:', error)
@@ -77,37 +374,28 @@ const AdminPage: React.FC = () => {
           schema: 'public',
           table: 'orders'
         },
-        (payload: RealtimePayload) => {
-          console.log('🔔 Realtime event received:', payload.eventType, payload)
+        (payload: any) => {
+          console.log(' Realtime event received:', payload.eventType, payload)
           setConnectionStatus('SUBSCRIBED')
-          
-          // Handle different types of events
           if (payload.eventType === 'INSERT') {
             const newOrder = payload.new as Order
-            console.log('➕ New order:', newOrder)
             setOrders(prev => [...prev, newOrder])
             if (audioEnabled && soundType !== 'none') {
-              playNewOrderSound('ping') // Use ping sound for new orders
+              playNewOrderSound('ping')
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedOrder = payload.new as Order
-            console.log('🔄 Updated order:', updatedOrder)
-            setOrders(prev => 
-              prev.map(order => order.id === updatedOrder.id ? updatedOrder : order)
-            )
+            setOrders(prev => prev.map(order => order.id === updatedOrder.id ? updatedOrder : order))
             if (audioEnabled && soundType !== 'none' && updatedOrder.status !== 'pending') {
-              playNewOrderSound(soundType) // Play sound for status updates
+              playNewOrderSound(soundType)
             }
           }
         }
       )
       .subscribe((status: string) => {
-        console.log('📡 Subscription status:', status)
+        console.log(' Subscription status:', status)
         setConnectionStatus(status)
-        
-        // Handle different connection states
         if (status === 'CHANNEL_ERROR') {
-          console.warn('⚠️ Channel error, retrying...')
           const retryInterval = Math.min(30000, 2000 * (retryAttempt + 1))
           setTimeout(() => {
             setRetryAttempt(prev => prev + 1)
@@ -116,76 +404,61 @@ const AdminPage: React.FC = () => {
         }
       })
 
-    // Cleanup function
     return () => {
-      console.log('🔌 Unsubscribing from channel')
+      console.log(' Unsubscribing from channel')
       supabase.removeChannel(channel)
     }
   }
 
-  const playNewOrderSound = (type: 'default' | 'alert' | 'notification' | 'ping' | 'none') => {
-    if (!audioEnabled || type === 'none') return;
-
+  const playNewOrderSound = (type: SoundType) => {
+    if (!audioEnabled || type === 'none') return
     try {
-      const audioCtx = new AudioContext();
-      const oscillator = audioCtx.createOscillator();
-      
-      // Get sound configuration
-      const config = soundConfig[type];
-      let currentTime = 0;
-
-      // Create and connect gain node for volume control
-      const gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0.7; // 70% volume for louder sound
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      // Play each tone in sequence
-      config.frequencies.forEach((frequency, index) => {
-        oscillator.frequency.value = frequency;
-        oscillator.start(currentTime);
-        oscillator.stop(currentTime + config.durations[index]);
-        currentTime += config.delays[index] / 1000;
-      });
-
-      // Start the oscillator
-      oscillator.start();
-      // Stop after the last tone
-      oscillator.stop(currentTime + config.durations[config.durations.length - 1]);
+      const audioCtx = new AudioContext()
+      const oscillator = audioCtx.createOscillator()
+      const config = soundConfig[type]
+      let currentTime = 0
+      const gainNode = audioCtx.createGain()
+      gainNode.gain.value = 0.7
+      oscillator.connect(gainNode)
+      gainNode.connect(audioCtx.destination)
+      config.frequencies.forEach((frequency: number, index: number) => {
+        oscillator.frequency.value = frequency
+        oscillator.start(currentTime)
+        oscillator.stop(currentTime + config.durations[index])
+        currentTime += config.delays[index] / 1000
+      })
+      oscillator.start()
+      oscillator.stop(currentTime + config.durations[config.durations.length - 1])
     } catch (error) {
-      console.log('Could not play notification sound:', error);
+      console.error('Could not play notification sound:', error)
     }
-  };
   }
 
   const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
-    setOrders(prev => prev.map(order => 
+    const updatedOrders = orders.map(order => 
       order.id === orderId ? { ...order, status: newStatus } : order
-    ))
+    )
+    setOrders(updatedOrders)
   }
 
   const handleLogout = () => {
     logout()
+    window.location.href = '/admin/login'
   }
 
   if (!isAdminAuthenticated) {
     return <AdminLogin />
   }
 
-  const filteredOrders = statusFilter === 'all' 
-    ? orders 
-    : orders.filter(order => order.status === statusFilter)
-
-  const getStatusCount = (status: Order['status']): number => {
-    return orders.filter(order => order.status === status).length
-  }
+  const filteredOrders = statusFilter === 'all' ? orders : orders.filter(order => order.status === statusFilter)
+  const getStatusCount = (status: Order['status']): number => orders.filter(order => order.status === status).length
 
   if (loading && activeTab === 'orders') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="flex items-center space-x-2">
-          <RefreshCw className="w-6 h-6 animate-spin text-orange-500" />
-          <span className="text-gray-600">Bestellungen werden geladen...</span>
+          <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+          <span className="text-gray-600">Loading orders...</span>
         </div>
       </div>
     )
@@ -198,77 +471,17 @@ const AdminPage: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
             <p className="text-gray-600">
-              {activeTab === 'orders' ? 'Verwalten Sie eingehende Bestellungen' : 'Verwalten Sie Ihr Menü'}
+              Manage orders and menu items
             </p>
-            {/* Connection Status Indicator */}
-            <div className="flex items-center space-x-2 mt-2">
-              <div className={`w-2 h-2 rounded-full ${
-                connectionStatus === 'SUBSCRIBED' ? 'bg-green-500 animate-pulse' : 
-                connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
-                'bg-red-500'
-              }`}></div>
-              <span className="text-xs text-gray-500">
-                {connectionStatus === 'SUBSCRIBED' ? '🟢 Echtzeit aktiv' : 
-                 connectionStatus === 'connecting' ? '🟡 Verbinde...' : 
-                 '🔴 Verbindung getrennt'}
-              </span>
-            </div>
           </div>
-
           <div className="flex items-center space-x-4">
-            {activeTab === 'orders' && (
-              <>
-                <button
-                  onClick={() => setAudioEnabled(!audioEnabled)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg border transition-colors ${
-                    audioEnabled 
-                      ? 'bg-orange-500 text-white border-orange-500' 
-                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <Bell className="w-4 h-4" />
-                  <span>{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
-                </button>
-
-                <button
-                  onClick={fetchOrders}
-                  className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Aktualisieren</span>
-                </button>
-              </>
-            )}
-
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Bell className="h-5 w-5" />
-                <button
-                  onClick={() => playNewOrderSound(soundType)}
-                  className="px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
-                  title="Test-Ton abspielen"
-                >
-                  Test-Ton
-                </button>
-                <select
-                  value={soundType}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSoundType(e.target.value as 'default' | 'alert' | 'notification' | 'none')}
-                  className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="default">Standard</option>
-                  <option value="notification">Benachrichtigung</option>
-                  <option value="alert">Alarm</option>
-                  <option value="none">Kein Ton</option>
-                </select>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                <LogOut className="mr-2 h-5 w-5" />
-                Abmelden
-              </button>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+              <LogOut className="h-5 w-5 mr-2" />
+              Logout
+            </button>
           </div>
         </div>
 
@@ -278,105 +491,100 @@ const AdminPage: React.FC = () => {
             onClick={() => setActiveTab('orders')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
               activeTab === 'orders'
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            <Bell className="w-4 h-4" />
-            <span>Bestellungen</span>
-            {orders.filter((order: Order) => order.status === 'pending').length > 0 && (
-              <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
-                {orders.filter((order: Order) => order.status === 'pending').length}
-              </span>
-            )}
-            🍽️ Bereit ({getStatusCount('ready')})
+            <Bell className="h-5 w-5" />
+            Orders
           </button>
-
           <button
             onClick={() => setActiveTab('menu')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
               activeTab === 'menu'
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            <Settings className="w-4 h-4" />
-            <span>Menü</span>
-            <Plus className="w-4 h-4" />
+            <Settings className="h-5 w-5" />
+            Menu
           </button>
         </div>
 
+        {/* Tab Content */}
         {activeTab === 'orders' ? (
           <>
-            {/* Status Filter */}
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <div className="flex items-center space-x-4 overflow-x-auto">
-                <div className="flex items-center space-x-2">
-                  <Filter className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm font-medium text-gray-700">Filter:</span>
-                </div>
-                
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex space-x-4">
                 <button
                   onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'all' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  Alle ({orders.length})
+                  All
                 </button>
-
                 <button
                   onClick={() => setStatusFilter('pending')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'pending'
-                      ? 'bg-yellow-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'pending' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  🔔 Neu ({getStatusCount('pending')})
+                  Pending ({getStatusCount('pending')})
                 </button>
-
                 <button
-                  onClick={() => setStatusFilter('confirmed')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'confirmed'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  onClick={() => setStatusFilter('preparing')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'preparing' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  ✅ Bestätigt ({getStatusCount('confirmed')})
+                  Preparing ({getStatusCount('preparing')})
                 </button>
-
                 <button
                   onClick={() => setStatusFilter('ready')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'ready'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'ready' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  🍽️ Bereit ({getStatusCount('ready')})
+                  Ready ({getStatusCount('ready')})
                 </button>
-
                 <button
                   onClick={() => setStatusFilter('completed')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'completed'
-                      ? 'bg-gray-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  className={`px-4 py-2 rounded-md text-sm font-medium ${
+                    statusFilter === 'completed' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  ✅ Abgeschlossen ({getStatusCount('completed')})
+                  Completed ({getStatusCount('completed')})
                 </button>
+              </div>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={audioEnabled}
+                    onChange={(e) => setAudioEnabled(e.target.checked)}
+                    className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span>Enable Audio Notifications</span>
+                </div>
+                <select
+                  value={soundType}
+                  onChange={(e) => setSoundType(e.target.value as 'default' | 'alert' | 'notification' | 'ping' | 'none')}
+                  className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                >
+                  <option value="default">Default</option>
+                  <option value="alert">Alert</option>
+                  <option value="notification">Notification</option>
+                  <option value="ping">Ping</option>
+                  <option value="none">None</option>
+                </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid gap-6">
               {filteredOrders.map((order) => (
-                <OrderCard 
-                  key={order.id} 
+                <OrderCard
+                  key={order.id}
                   order={order} 
                   onStatusChange={handleStatusUpdate}
                 />
