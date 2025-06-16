@@ -16,24 +16,29 @@ const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
   const [retryAttempt, setRetryAttempt] = useState<number>(0)
-  const [soundType, setSoundType] = useState<'default' | 'alert' | 'notification' | 'none'>('notification')
+  const [soundType, setSoundType] = useState<'default' | 'alert' | 'notification' | 'ping' | 'none'>('notification')
 
   // Sound configuration
   const soundConfig = {
     default: {
-      frequencies: [800, 1000, 800],
-      durations: [0.2, 0.2, 0.3],
-      delays: [0, 300, 600]
+      frequencies: [440, 494, 523], // A4, B4, C5
+      durations: [0.1, 0.1, 0.1],
+      delays: [0, 100, 200]
     },
     alert: {
-      frequencies: [1200, 1400, 1200],
-      durations: [0.1, 0.1, 0.2],
-      delays: [0, 200, 400]
+      frequencies: [261, 392, 523], // C4, G4, C5
+      durations: [0.2, 0.2, 0.2],
+      delays: [0, 150, 300]
     },
     notification: {
-      frequencies: [600, 800, 600],
-      durations: [0.3, 0.3, 0.4],
-      delays: [0, 500, 1000]
+      frequencies: [330, 392, 440], // E4, G4, A4
+      durations: [0.15, 0.15, 0.15],
+      delays: [0, 100, 200]
+    },
+    ping: {
+      frequencies: [659], // E5
+      durations: [0.1],
+      delays: [0]
     }
   }
 
@@ -63,8 +68,6 @@ const AdminPage: React.FC = () => {
   }
 
   const setupRealtimeSubscription = () => {
-    console.log('🔄 Setting up realtime subscription...')
-    
     const channel = supabase
       .channel('admin-orders-channel')
       .on(
@@ -76,18 +79,25 @@ const AdminPage: React.FC = () => {
         },
         (payload: RealtimePayload) => {
           console.log('🔔 Realtime event received:', payload.eventType, payload)
-          setConnectionStatus('connected')
+          setConnectionStatus('SUBSCRIBED')
           
           // Handle different types of events
           if (payload.eventType === 'INSERT') {
             const newOrder = payload.new as Order
+            console.log('➕ New order:', newOrder)
             setOrders(prev => [...prev, newOrder])
+            if (audioEnabled && soundType !== 'none') {
+              playNewOrderSound('ping') // Use ping sound for new orders
+            }
           } else if (payload.eventType === 'UPDATE') {
             const updatedOrder = payload.new as Order
-            setOrders(prev => prev.map(order => order.id === updatedOrder.id ? updatedOrder : order))
-          }
-          if (audioEnabled && soundType !== 'none') {
-            playNewOrderSound(soundType)
+            console.log('🔄 Updated order:', updatedOrder)
+            setOrders(prev => 
+              prev.map(order => order.id === updatedOrder.id ? updatedOrder : order)
+            )
+            if (audioEnabled && soundType !== 'none' && updatedOrder.status !== 'pending') {
+              playNewOrderSound(soundType) // Play sound for status updates
+            }
           }
         }
       )
@@ -95,14 +105,13 @@ const AdminPage: React.FC = () => {
         console.log('📡 Subscription status:', status)
         setConnectionStatus(status)
         
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to realtime updates')
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error, retrying in 2 seconds...')
-          const retryInterval = Math.min(30000, 2000 * (retryAttempt + 1)) // Exponential backoff
+        // Handle different connection states
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('⚠️ Channel error, retrying...')
+          const retryInterval = Math.min(30000, 2000 * (retryAttempt + 1))
           setTimeout(() => {
             setRetryAttempt(prev => prev + 1)
-            setupRealtimeSubscription() // Restart subscription
+            setupRealtimeSubscription()
           }, retryInterval)
         }
       })
@@ -114,32 +123,34 @@ const AdminPage: React.FC = () => {
     }
   }
 
-  const playNewOrderSound = (type: 'default' | 'alert' | 'notification') => {
-    try {
-      const config = soundConfig[type]
-      
-      // Erstelle mehrere Töne für bessere Aufmerksamkeit
-      const playTone = (frequency: number, duration: number, delay: number = 0) => {
-        setTimeout(() => {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-          const oscillator = audioContext.createOscillator()
-          const gainNode = audioContext.createGain()
-          
-          oscillator.connect(gainNode)
-          gainNode.connect(audioContext.destination)
-          
-          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime)
-          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
-          
-          oscillator.start(audioContext.currentTime)
-          oscillator.stop(audioContext.currentTime + duration)
-        }, delay)
-      }
-      
-      // Spiele die Töne in der angegebenen Konfiguration
-      config.frequencies.forEach((freq, index) => {
-        playTone(freq, config.durations[index], config.delays[index])
+  const playNewOrderSound = (type: 'default' | 'alert' | 'notification' | 'ping' | 'none') => {
+    if (!audioEnabled || type === 'none') return
+
+    const audioCtx = new AudioContext()
+    const oscillator = audioCtx.createOscillator()
+    
+    // Get sound configuration
+    const config = soundConfig[type]
+    let currentTime = 0
+
+    // Create and connect gain node for volume control
+    const gainNode = audioCtx.createGain()
+    gainNode.gain.value = 0.7 // 70% volume for louder sound
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+
+    // Play each tone in sequence
+    config.frequencies.forEach((frequency, index) => {
+      oscillator.frequency.value = frequency
+      oscillator.start(currentTime)
+      oscillator.stop(currentTime + config.durations[index])
+      currentTime += config.delays[index] / 1000
+    })
+
+    // Start the oscillator
+    oscillator.start()
+    // Stop after the last tone
+    oscillator.stop(currentTime + config.durations[config.durations.length - 1])
       })
       
     } catch (error) {
