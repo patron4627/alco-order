@@ -30,6 +30,57 @@ const AdminPage: React.FC<AdminPageProps> = () => {
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
 
+  // Funktionen an den Anfang stellen
+  const fetchOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      
+      if (data) {
+        setOrders(data as Order[])
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden der Bestellungen:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const playNewOrderSound = () => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+      oscillator.connect(audioContext.destination)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
+    } catch (error) {
+      console.error('❌ Fehler beim Abspielen des Tons:', error)
+    }
+  }
+
+  const handleStatusUpdate = async (order: Order, status: Order['status']) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', order.id)
+      
+      if (error) throw error
+      
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status } : o))
+    } catch (error) {
+      console.error('❌ Fehler beim Aktualisieren des Status:', error)
+    }
+  }
+
   // Page Visibility API für App-Neuladen
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -161,60 +212,6 @@ const AdminPage: React.FC<AdminPageProps> = () => {
       supabase.removeChannel(channel)
     }
   }, [isAdminAuthenticated, audioEnabled])
-
-  const fetchOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (error) throw error
-      
-      if (data) {
-        setOrders(data as Order[])
-      }
-    } catch (error) {
-      console.error('❌ Fehler beim Laden der Bestellungen:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const playNewOrderSound = () => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      
-      oscillator.type = 'sine'
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-      oscillator.connect(audioContext.destination)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
-    } catch (error) {
-      console.error('❌ Fehler beim Abspielen des Tons:', error)
-    }
-  }
-
-  const handleStatusUpdate = async (order: Order, status: Order['status']) => {
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status })
-        .eq('id', order.id)
-      
-      if (error) throw error
-      
-      setOrders((prev: Order[]) => {
-        return prev.map((o: Order) => 
-          o.id === order.id ? { ...o, status } : o
-        )
-      })
-    } catch (error) {
-      console.error('❌ Fehler beim Aktualisieren des Status:', error)
-    }
-  }
 
   const handleLogout = () => {
     logout()
