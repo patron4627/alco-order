@@ -184,17 +184,22 @@ const AdminPage: React.FC<AdminPageProps> = () => {
               if (Notification.permission === 'granted') {
                 // Hier würden wir normalerweise den Push-Service aufrufen
                 // Da wir Vercel verwenden, müssen wir einen Webhook nutzen
-                const { data, error } = await supabase
-                  .from('push_notifications')
-                  .insert({
-                    title: '🔔 Neue Bestellung!',
-                    body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                    tag: 'new-order-' + newOrder.id
-                  })
+                const sendPushNotification = async () => {
+                  const { data, error } = await supabase
+                    .from('push_notifications')
+                    .insert({
+                      title: '🔔 Neue Bestellung!',
+                      body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
+                      tag: 'new-order-' + newOrder.id
+                    })
 
-                if (error) {
-                  console.error('❌ Fehler beim Senden der Push-Benachrichtigung:', error)
+                  if (error) {
+                    console.error('❌ Fehler beim Senden der Push-Benachrichtigung:', error)
+                  }
                 }
+                
+                // Async Funktion ausführen
+                sendPushNotification()
               }
             } catch (error) {
               console.error('❌ Fehler bei Push-Benachrichtigung:', error)
