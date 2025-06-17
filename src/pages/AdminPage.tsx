@@ -179,18 +179,36 @@ const AdminPage: React.FC<AdminPageProps> = () => {
               playNewOrderSound()
             }
             
-            // Push-Benachrichtigung senden
+            // Browser-Benachrichtigung und Sound
+            try {
+              if (audioEnabled) {
+                playNewOrderSound()
+              }
+              
+              if (Notification.permission === 'granted') {
+                const notification = new Notification('🔔 Neue Bestellung!', {
+                  body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
+                  icon: '/icon-192x192.png',
+                  tag: 'new-order-' + newOrder.id,
+                  requireInteraction: true
+                })
+                notification.onclick = () => window.focus()
+              }
+            } catch (error) {
+              console.error('❌ Fehler bei Benachrichtigung:', error)
+            }
+
+            // Push-Benachrichtigung für Hintergrund-Benachrichtigungen
             try {
               if (Notification.permission === 'granted') {
-                // Hier würden wir normalerweise den Push-Service aufrufen
-                // Da wir Vercel verwenden, müssen wir einen Webhook nutzen
                 const sendPushNotification = async () => {
                   const { data, error } = await supabase
                     .from('push_notifications')
                     .insert({
                       title: '🔔 Neue Bestellung!',
                       body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                      tag: 'new-order-' + newOrder.id
+                      tag: 'new-order-' + newOrder.id,
+                      webhook_url: process.env.NEXT_PUBLIC_PUSH_WEBHOOK_URL
                     })
 
                   if (error) {
