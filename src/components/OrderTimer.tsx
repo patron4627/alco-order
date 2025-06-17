@@ -10,7 +10,6 @@ interface OrderTimerProps {
 const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
   const [timeLeft, setTimeLeft] = useState(600) // 10 Minuten in Sekunden
   const [isConfirmed, setIsConfirmed] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<string>('connecting')
 
   useEffect(() => {
     if (timeLeft <= 0 || isConfirmed) return
@@ -32,7 +31,12 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
     console.log('🔄 OrderTimer: Setting up realtime subscription for order:', orderId)
     
     const channel = supabase
-      .channel(`order-timer-${orderId}`)
+      .channel(`order-timer-${orderId}`, {
+        config: {
+          broadcast: { self: false },
+          presence: { key: orderId }
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -43,7 +47,6 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
         },
         (payload) => {
           console.log('🔔 OrderTimer: Order update received:', payload)
-          setConnectionStatus('connected')
           
           const updatedOrder = payload.new as any
           console.log('📋 Order status:', updatedOrder.status)
@@ -69,13 +72,11 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
       )
       .subscribe((status) => {
         console.log('📡 OrderTimer subscription status:', status)
-        setConnectionStatus(status)
         
-        if (status === 'CHANNEL_ERROR') {
-          console.error('❌ OrderTimer: Channel error, retrying...')
-          setTimeout(() => {
-            // Retry subscription
-          }, 3000)
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ OrderTimer successfully subscribed')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ OrderTimer: Channel error')
         }
       })
 
@@ -190,31 +191,10 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
         />
       </div>
 
-      <div className="text-center mb-4">
+      <div className="text-center">
         <p className="text-xs text-blue-600 bg-blue-100 inline-block px-3 py-1 rounded-full">
           📋 Bestellnummer: #{orderId.slice(-6).toUpperCase()}
         </p>
-      </div>
-
-      {/* Connection Status */}
-      <div className="text-center">
-        <div className="flex items-center justify-center space-x-2">
-          <div className={`w-2 h-2 rounded-full ${
-            connectionStatus === 'SUBSCRIBED' ? 'bg-green-500 animate-pulse' : 
-            connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
-            'bg-red-500'
-          }`}></div>
-          <span className="text-xs text-gray-500">
-            {connectionStatus === 'SUBSCRIBED' ? '🟢 Echtzeit aktiv' : 
-             connectionStatus === 'connecting' ? '🟡 Verbinde...' : 
-             '🔴 Verbindung getrennt'}
-          </span>
-        </div>
-        {connectionStatus !== 'SUBSCRIBED' && (
-          <p className="text-xs text-red-600 mt-2">
-            ⚠️ Automatische Updates möglicherweise nicht verfügbar
-          </p>
-        )}
       </div>
     </div>
   )
