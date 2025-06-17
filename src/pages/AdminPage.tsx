@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from 'react'
-import { Bell, RefreshCw, Filter, LogOut, Settings, Plus } from 'lucide-react'
-import { Order } from '../types'
+import { Bell, RefreshCw, Filter, LogOut, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import OrderCard from '../components/OrderCard'
-import AdminLogin from '../components/AdminLogin'
-import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
+import { Order } from '../types'
+import AdminLogin from '../components/AdminLogin'
+import OrderCard from '../components/OrderCard'
+import MenuManagement from '../components/MenuManagement'
 
-const AdminPage: React.FC = () => {
+// Definiere die Typen für die JSX-Elemente
+interface JSXElementProps {
+  children?: React.ReactNode
+  className?: string
+  onClick?: () => void
+  style?: React.CSSProperties
+  type?: string
+  value?: string
+  checked?: boolean
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+}
+
+interface AdminPageProps {}
+
+const AdminPage: React.FC<AdminPageProps> = () => {
   const { isAdminAuthenticated, logout } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState<boolean>(true)
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
-  const [audioEnabled, setAudioEnabled] = useState(true)
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
 
   // Page Visibility API für App-Neuladen
@@ -32,13 +47,46 @@ const AdminPage: React.FC = () => {
     };
   }, []);
 
+  // Notification Permission anfragen und persistieren
+  useEffect(() => {
+    if (!isAdminAuthenticated) return
+
+    // Prüfe ob Benachrichtigungen bereits erlaubt sind
+    if (Notification.permission === 'granted') {
+      return
+    }
+
+    // Wenn Benachrichtigungen noch nicht erlaubt sind
+    if (Notification.permission === 'default') {
+      Notification.requestPermission()
+        .then(permission => {
+          if (permission === 'granted') {
+            console.log('✅ Benachrichtigungen wurden erlaubt')
+            // Speichere die Erlaubnis persistierend
+            localStorage.setItem('notificationsEnabled', 'true')
+          }
+        })
+        .catch(error => {
+          console.error('❌ Fehler bei Benachrichtigungs-Erlaubnis:', error)
+        })
+    }
+  }, [isAdminAuthenticated])
+
+  // Prüfe beim Start, ob Benachrichtigungen erlaubt sind
+  useEffect(() => {
+    if (!isAdminAuthenticated) return
+    
+    const notificationsEnabled = localStorage.getItem('notificationsEnabled') === 'true'
+    if (notificationsEnabled && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [isAdminAuthenticated])
+
+  // Realtime Subscription
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
     fetchOrders()
-    
-    // Setup realtime subscription
-    console.log('🔄 Setting up admin realtime subscription...')
     
     const channel = supabase
       .channel('admin-orders', {
@@ -54,72 +102,44 @@ const AdminPage: React.FC = () => {
           schema: 'public',
           table: 'orders'
         },
-        (payload) => {
-          console.log('🔔 Admin: Realtime event received:', payload.eventType, payload)
-          
+        (payload: any) => {
           if (payload.eventType === 'INSERT') {
             const newOrder = payload.new as Order
-            console.log('➕ New order received:', newOrder.id)
-            
             setOrders(prev => {
-              // Prüfe ob Order bereits existiert
               const exists = prev.find(order => order.id === newOrder.id)
-              if (exists) {
-                console.log('⚠️ Order already exists, skipping')
-                return prev
-              }
-              console.log('✅ Adding new order to list')
+              if (exists) return prev
               return [newOrder, ...prev]
             })
             
-            // Sofortiger Signalton
             if (audioEnabled) {
-              console.log('🔊 Playing notification sound')
               playNewOrderSound()
             }
             
-            // Browser Notification
             if (Notification.permission === 'granted') {
               try {
                 const notification = new Notification('🔔 Neue Bestellung!', {
                   body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
                   icon: '/icon-192x192.png',
                   tag: 'new-order-' + newOrder.id,
-                  requireInteraction: true,
-                  // iOS-spezifische Optionen
-                  silent: false, // Stelle sicher, dass der Ton abgespielt wird
-                  sticky: true   // Halte die Benachrichtigung länger an
+                  requireInteraction: true
                 })
-
-                // Füge einen Event Listener hinzu, um die Benachrichtigung zu verarbeiten
-                notification.onclick = () => {
-                  // Öffne die App wenn die Benachrichtigung geklickt wird
-                  window.focus()
-                }
+                notification.onclick = () => window.focus()
               } catch (error) {
                 console.error('❌ Fehler bei Benachrichtigung:', error)
               }
             }
-            
           } else if (payload.eventType === 'UPDATE') {
             const updatedOrder = payload.new as Order
-            console.log('🔄 Order updated:', updatedOrder.id, updatedOrder.status)
-            
             setOrders(prev => prev.map(order => 
               order.id === updatedOrder.id ? updatedOrder : order
             ))
-            
           } else if (payload.eventType === 'DELETE') {
             const deletedOrder = payload.old as Order
-            console.log('🗑️ Order deleted:', deletedOrder.id)
-            
             setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
           }
         }
       )
-      .subscribe((status) => {
-        console.log('📡 Admin subscription status:', status)
-        
+      .subscribe((status: any) => {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Admin successfully subscribed to realtime updates')
         } else if (status === 'CHANNEL_ERROR') {
@@ -127,61 +147,25 @@ const AdminPage: React.FC = () => {
         }
       })
 
-    // Notification Permission anfragen und persistieren
-    useEffect(() => {
-      if (!isAdminAuthenticated) return
-
-      // Prüfe ob Benachrichtigungen bereits erlaubt sind
-      if (Notification.permission === 'granted') {
-        return
-      }
-
-      // Wenn Benachrichtigungen noch nicht erlaubt sind
-      if (Notification.permission === 'default') {
-        Notification.requestPermission()
-          .then(permission => {
-            if (permission === 'granted') {
-              console.log('✅ Benachrichtigungen wurden erlaubt')
-              // Speichere die Erlaubnis persistierend
-              localStorage.setItem('notificationsEnabled', 'true')
-            }
-          })
-          .catch(error => {
-            console.error('❌ Fehler bei Benachrichtigungs-Erlaubnis:', error)
-          })
-      }
-    }, [isAdminAuthenticated])
-
-    // Prüfe beim Start, ob Benachrichtigungen erlaubt sind
-    const notificationsEnabled = localStorage.getItem('notificationsEnabled') === 'true'
-    if (notificationsEnabled && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-
-    // Cleanup function
     return () => {
-      console.log('🔌 Unsubscribing from admin channel')
       supabase.removeChannel(channel)
     }
   }, [isAdminAuthenticated, audioEnabled])
 
   const fetchOrders = async () => {
     try {
-      console.log('📥 Fetching orders...')
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('❌ Error fetching orders:', error)
-        throw error
-      }
       
-      console.log('✅ Orders fetched:', data?.length || 0)
-      setOrders(data || [])
+      if (error) throw error
+      
+      if (data) {
+        setOrders(data as Order[])
+      }
     } catch (error) {
-      console.error('Error fetching orders:', error)
+      console.error('❌ Fehler beim Laden der Bestellungen:', error)
     } finally {
       setLoading(false)
     }
@@ -189,39 +173,37 @@ const AdminPage: React.FC = () => {
 
   const playNewOrderSound = () => {
     try {
-      // Erstelle mehrere Töne für bessere Aufmerksamkeit
-      const playTone = (frequency: number, duration: number, delay: number = 0) => {
-        setTimeout(() => {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-          const oscillator = audioContext.createOscillator()
-          const gainNode = audioContext.createGain()
-          
-          oscillator.connect(gainNode)
-          gainNode.connect(audioContext.destination)
-          
-          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime)
-          gainNode.gain.setValueAtTime(0.8, audioContext.currentTime)
-          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
-          
-          oscillator.start(audioContext.currentTime)
-          oscillator.stop(audioContext.currentTime + duration)
-        }, delay)
-      }
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
       
-      // Spiele eine Sequenz von Tönen
-      playTone(800, 0.2, 0)
-      playTone(1000, 0.2, 300)
-      playTone(800, 0.3, 600)
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+      oscillator.connect(audioContext.destination)
       
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
     } catch (error) {
-      console.log('Could not play notification sound:', error)
+      console.error('❌ Fehler beim Abspielen des Tons:', error)
     }
   }
 
-  const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
-    setOrders(prev => prev.map(order => 
-      order.id === orderId ? { ...order, status: newStatus } : order
-    ))
+  const handleStatusUpdate = async (order: Order, status: Order['status']) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', order.id)
+      
+      if (error) throw error
+      
+      setOrders((prev: Order[]) => {
+        return prev.map((o: Order) => 
+          o.id === order.id ? { ...o, status } : o
+        )
+      })
+    } catch (error) {
+      console.error('❌ Fehler beim Aktualisieren des Status:', error)
+    }
   }
 
   const handleLogout = () => {
