@@ -34,8 +34,18 @@ const AdminPage: React.FC<AdminPageProps> = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // App neu laden wenn aus Hintergrund zurückkehrt
-        window.location.reload();
+        // Prüfe ob die App im Hintergrund war
+        if (document.hidden) {
+          // App neu laden wenn aus Hintergrund zurückkehrt
+          window.location.reload();
+        } else {
+          // Aktualisiere nur die Daten wenn die App im Vordergrund war
+          fetchOrders();
+        }
+      } else {
+        // Speichere die aktuelle Session beim Hintergrundwechsel
+        const currentSession = supabase.auth.getSession();
+        localStorage.setItem('supabaseSession', JSON.stringify(currentSession));
       }
     };
 
@@ -45,7 +55,7 @@ const AdminPage: React.FC<AdminPageProps> = () => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [fetchOrders]);
 
   // Notification Permission anfragen und persistieren
   useEffect(() => {
