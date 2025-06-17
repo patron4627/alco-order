@@ -144,7 +144,7 @@ const AdminPage: React.FC = () => {
           gainNode.connect(audioContext.destination)
           
           oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime)
-          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+          gainNode.gain.setValueAtTime(0.8, audioContext.currentTime)
           gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
           
           oscillator.start(audioContext.currentTime)

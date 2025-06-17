@@ -128,7 +128,7 @@ const OrderConfirmationPage: React.FC = () => {
       oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.2)
       oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.3)
       
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.setValueAtTime(0.8, audioContext.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
       
       oscillator.start(audioContext.currentTime)
