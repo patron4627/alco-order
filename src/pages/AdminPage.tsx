@@ -108,39 +108,42 @@ const AdminPage: React.FC<AdminPageProps> = () => {
     };
   }, [fetchOrders]);
 
-  // Notification Permission anfragen und persistieren
+  // Push-Benachrichtigungen einrichten
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
-    // Prüfe ob Benachrichtigungen bereits erlaubt sind
-    if (Notification.permission === 'granted') {
+    // Prüfe ob Push-Benachrichtigungen unterstützt werden
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.log('Push-Benachrichtigungen werden nicht unterstützt')
       return
     }
 
-    // Wenn Benachrichtigungen noch nicht erlaubt sind
-    if (Notification.permission === 'default') {
-      Notification.requestPermission()
-        .then(permission => {
-          if (permission === 'granted') {
-            console.log('✅ Benachrichtigungen wurden erlaubt')
-            // Speichere die Erlaubnis persistierend
-            localStorage.setItem('notificationsEnabled', 'true')
-          }
-        })
-        .catch(error => {
-          console.error('❌ Fehler bei Benachrichtigungs-Erlaubnis:', error)
-        })
-    }
-  }, [isAdminAuthenticated])
-
-  // Prüfe beim Start, ob Benachrichtigungen erlaubt sind
-  useEffect(() => {
-    if (!isAdminAuthenticated) return
-    
-    const notificationsEnabled = localStorage.getItem('notificationsEnabled') === 'true'
-    if (notificationsEnabled && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
+    // Service Worker registrieren
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(registration => {
+        // Prüfe ob Push-Benachrichtigungen bereits erlaubt sind
+        if (Notification.permission === 'granted') {
+          return registration.pushManager.getSubscription()
+        }
+        
+        // Wenn Benachrichtigungen noch nicht erlaubt sind
+        if (Notification.permission === 'default') {
+          Notification.requestPermission()
+            .then(permission => {
+              if (permission === 'granted') {
+                console.log('✅ Push-Benachrichtigungen wurden erlaubt')
+                // Speichere die Erlaubnis persistiernd
+                localStorage.setItem('notificationsEnabled', 'true')
+              }
+            })
+            .catch(error => {
+              console.error('❌ Fehler bei Push-Benachrichtigungs-Erlaubnis:', error)
+            })
+        }
+      })
+      .catch(error => {
+        console.error('❌ Fehler beim Registrieren des Service Workers:', error)
+      })
   }, [isAdminAuthenticated])
 
   // Realtime Subscription
@@ -176,18 +179,25 @@ const AdminPage: React.FC<AdminPageProps> = () => {
               playNewOrderSound()
             }
             
-            if (Notification.permission === 'granted') {
-              try {
-                const notification = new Notification('🔔 Neue Bestellung!', {
-                  body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                  icon: '/icon-192x192.png',
-                  tag: 'new-order-' + newOrder.id,
-                  requireInteraction: true
-                })
-                notification.onclick = () => window.focus()
-              } catch (error) {
-                console.error('❌ Fehler bei Benachrichtigung:', error)
+            // Push-Benachrichtigung senden
+            try {
+              if (Notification.permission === 'granted') {
+                // Hier würden wir normalerweise den Push-Service aufrufen
+                // Da wir Vercel verwenden, müssen wir einen Webhook nutzen
+                const { data, error } = await supabase
+                  .from('push_notifications')
+                  .insert({
+                    title: '🔔 Neue Bestellung!',
+                    body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
+                    tag: 'new-order-' + newOrder.id
+                  })
+
+                if (error) {
+                  console.error('❌ Fehler beim Senden der Push-Benachrichtigung:', error)
+                }
               }
+            } catch (error) {
+              console.error('❌ Fehler bei Push-Benachrichtigung:', error)
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedOrder = payload.new as Order
