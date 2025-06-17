@@ -15,6 +15,23 @@ const AdminPage: React.FC = () => {
   const [audioEnabled, setAudioEnabled] = useState(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
 
+  // Page Visibility API für App-Neuladen
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // App neu laden wenn aus Hintergrund zurückkehrt
+        window.location.reload();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Cleanup beim Komponenten-Unmount
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
@@ -63,12 +80,25 @@ const AdminPage: React.FC = () => {
             
             // Browser Notification
             if (Notification.permission === 'granted') {
-              new Notification('🔔 Neue Bestellung!', {
-                body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                icon: '/icon-192x192.png',
-                tag: 'new-order-' + newOrder.id,
-                requireInteraction: true
-              })
+              try {
+                const notification = new Notification('🔔 Neue Bestellung!', {
+                  body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
+                  icon: '/icon-192x192.png',
+                  tag: 'new-order-' + newOrder.id,
+                  requireInteraction: true,
+                  // iOS-spezifische Optionen
+                  silent: false, // Stelle sicher, dass der Ton abgespielt wird
+                  sticky: true   // Halte die Benachrichtigung länger an
+                })
+
+                // Füge einen Event Listener hinzu, um die Benachrichtigung zu verarbeiten
+                notification.onclick = () => {
+                  // Öffne die App wenn die Benachrichtigung geklickt wird
+                  window.focus()
+                }
+              } catch (error) {
+                console.error('❌ Fehler bei Benachrichtigung:', error)
+              }
             }
             
           } else if (payload.eventType === 'UPDATE') {
@@ -97,8 +127,34 @@ const AdminPage: React.FC = () => {
         }
       })
 
-    // Notification Permission anfragen
-    if (Notification.permission === 'default') {
+    // Notification Permission anfragen und persistieren
+    useEffect(() => {
+      if (!isAdminAuthenticated) return
+
+      // Prüfe ob Benachrichtigungen bereits erlaubt sind
+      if (Notification.permission === 'granted') {
+        return
+      }
+
+      // Wenn Benachrichtigungen noch nicht erlaubt sind
+      if (Notification.permission === 'default') {
+        Notification.requestPermission()
+          .then(permission => {
+            if (permission === 'granted') {
+              console.log('✅ Benachrichtigungen wurden erlaubt')
+              // Speichere die Erlaubnis persistierend
+              localStorage.setItem('notificationsEnabled', 'true')
+            }
+          })
+          .catch(error => {
+            console.error('❌ Fehler bei Benachrichtigungs-Erlaubnis:', error)
+          })
+      }
+    }, [isAdminAuthenticated])
+
+    // Prüfe beim Start, ob Benachrichtigungen erlaubt sind
+    const notificationsEnabled = localStorage.getItem('notificationsEnabled') === 'true'
+    if (notificationsEnabled && Notification.permission === 'default') {
       Notification.requestPermission()
     }
 
