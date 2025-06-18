@@ -25,7 +25,18 @@ export default async function handler(request: Request) {
           title: 'Bestellung anzeigen',
           icon: '/icon-192x192.png'
         }
-      ]
+      ],
+      badge: '/icon-192x192.png',
+      renotify: true,
+      silent: false,
+      tag: 'new-order',
+      timestamp: Date.now(),
+      data: {
+        ...data,
+        url: '/orders', // URL, zu der die Benachrichtigung führt
+        priority: 'high',
+        ttl: 2419200 // 28 Tage
+      }
     }
 
     await webPush.sendNotification(subscription, JSON.stringify(payload))

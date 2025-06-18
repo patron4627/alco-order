@@ -104,26 +104,38 @@ self.addEventListener('notificationclick', (event) => {
 
 // Push Handler für neue Benachrichtigungen
 self.addEventListener('push', (event) => {
-  const data = event.data.json();
+  console.log('⚡ Push event received')
+  
+  const data = event.data.json()
   
   // Wichtige Daten extrahieren
-  const title = data.title || 'Neue Bestellung';
-  const body = data.body || 'Eine neue Bestellung wurde aufgegeben';
-  const orderId = data.orderId;
-  const type = data.type || 'new-order';
+  const title = data.title || 'Neue Bestellung'
+  const body = data.body || 'Eine neue Bestellung wurde aufgegeben'
+  const icon = data.icon || '/icon-192x192.png'
+  const badge = data.badge || '/icon-192x192.png'
+  const requireInteraction = data.requireInteraction || true
+  const vibrate = data.vibrate || [200, 100, 200, 100, 200]
+  const renotify = data.renotify || true
+  const silent = data.silent || false
+  const tag = data.tag || 'new-order'
+  const timestamp = data.timestamp || Date.now()
+  const orderId = data.orderId
+  const type = data.type || 'new-order'
   
-  // Push-Benachrichtigung anzeigen
+  // Benachrichtigung anzeigen
   event.waitUntil(
     self.registration.showNotification(title, {
-      body: body,
-      icon: '/icon-192x192.png',
-      data: { orderId, type },
+      body,
+      icon,
+      badge,
+      requireInteraction,
+      vibrate,
+      actions,
+      renotify,
+      silent,
       tag: `order-${orderId || Date.now()}`,
-      requireInteraction: true,
-      vibrate: [200, 100, 200],
-      actions: [
-        {
-          action: 'view',
+      timestamp,
+      data: { orderId, type }
           title: 'Bestellung anzeigen',
           icon: '/icon-192x192.png'
         }
