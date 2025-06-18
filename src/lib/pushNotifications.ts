@@ -3,6 +3,7 @@ export class PushNotificationService {
   private static instance: PushNotificationService
   private registration: ServiceWorkerRegistration | null = null
   private isSupported = false
+  private subscription: PushSubscription | null = null
 
   private constructor() {
     this.checkSupport()
@@ -36,7 +37,19 @@ export class PushNotificationService {
 
       // Notification Permission anfordern
       const permission = await this.requestPermission()
-      return permission === 'granted'
+      if (permission !== 'granted') return false
+
+      // Push Subscription anfordern
+      this.subscription = await this.getSubscription()
+      if (this.subscription) {
+        // Subscription an Backend senden
+        await this.updateSubscription(this.subscription)
+      }
+
+      // Keep-Alive starten
+      this.startKeepAlive()
+
+      return true
     } catch (error) {
       console.error('❌ Failed to initialize push notifications:', error)
       return false
@@ -54,6 +67,49 @@ export class PushNotificationService {
 
     console.log('📱 Notification permission:', permission)
     return permission
+  }
+
+  async getSubscription(): Promise<PushSubscription | null> {
+    if (!this.registration) return null
+
+    try {
+      const subscription = await this.registration.pushManager.getSubscription()
+      return subscription || await this.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: process.env.VITE_PUSH_PUBLIC_KEY
+      })
+    } catch (error) {
+      console.error('❌ Failed to get subscription:', error)
+      return null
+    }
+  }
+
+  async updateSubscription(subscription: PushSubscription): Promise<void> {
+    try {
+      await fetch('/api/update-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ subscription })
+      })
+      console.log('✅ Subscription updated on server')
+    } catch (error) {
+      console.error('❌ Failed to update subscription:', error)
+      // Bei Vercel Edge Functions versuchen wir es mit einem fallback URL
+      try {
+        await fetch('https://api.vercel.com/v2/now/deployments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.VERCEL_TOKEN}`
+          },
+          body: JSON.stringify({ subscription })
+        })
+      } catch (fallbackError) {
+        console.error('❌ Failed to update subscription via fallback:', fallbackError)
+      }
+    }
   }
 
   async showNotification(title: string, options: {
@@ -102,6 +158,18 @@ export class PushNotificationService {
     } catch (error) {
       console.error('❌ Failed to show notification:', error)
     }
+  }
+
+  startKeepAlive(): void {
+    // Keep-Alive alle 15 Minuten
+    setInterval(() => {
+      fetch('/api/keep-alive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).catch(error => {
+        console.error('Keep-alive failed:', error)
+      })
+    }, 15 * 60 * 1000) // 15 Minuten
   }
 
   private playNotificationSound() {

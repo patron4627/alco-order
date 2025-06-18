@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build"
+    }
+  ],
+  "routes": [
+    {
+      "/api/update-subscription": {
+        "handler": {
+          "path": "api/update-subscription.ts",
+          "runtime": "edge"
+        }
+      }
+    },
+    {
+      "/api/keep-alive": {
+        "handler": {
+          "path": "api/keep-alive.ts",
+          "runtime": "edge"
+        }
+      }
+    },
+    {
+      "/api/error": {
+        "handler": {
+          "path": "api/error.ts",
+          "runtime": "edge"
+        }
+      }
+    },
+    {
+      "/api/performance": {
+        "handler": {
+          "path": "api/performance.ts",
+          "runtime": "edge"
+        }
+      }
+    },
+    {
+      "/sw.js": {
+        "handler": {
+          "path": "public/sw.js"
+        }
+      }
+    },
+    {
+      "/": {
+        "handler": {
+          "path": "dist/index.html"
+        }
+      }
+    }
+  ],
+  "env": [
+    "VERCEL_TOKEN",
+    "PUSH_PUBLIC_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY"
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        }
+      ]
+    }
+  ]
+}

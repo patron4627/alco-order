@@ -1,11 +1,67 @@
 // Service Worker für Push Notifications
-const CACHE_NAME = 'restaurant-app-v1'
+const CACHE_NAME = 'restaurant-app-v1';
+let errorCount = 0;
+const MAX_ERROR_RETRIES = 3;
 
 // Service Worker Installation
 self.addEventListener('install', (event) => {
-  console.log('🔧 Service Worker installing...')
-  self.skipWaiting()
-})
+  console.log('🔧 Service Worker installing...');
+  self.skipWaiting();
+});
+
+// Fehlerbehandlung und Logging
+self.addEventListener('error', (event) => {
+  console.error('Service Worker Error:', event.error);
+  
+  // Fehler zählen
+  errorCount++;
+  
+  // Fehler-Tracking
+  fetch('/api/error', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      error: event.error.message,
+      timestamp: new Date().toISOString(),
+      errorCount,
+      type: 'service-worker-error'
+    })
+  });
+  
+  // Bei zu vielen Fehlern Service Worker neu starten
+  if (errorCount >= MAX_ERROR_RETRIES) {
+    console.error('Too many errors, restarting service worker...');
+    self.skipWaiting();
+    self.clients.claim();
+  }
+});
+
+// Performance Monitoring
+self.addEventListener('fetch', (event) => {
+  const startTime = Date.now();
+  
+  event.respondWith(
+    fetchWithTimeout(event.request).then(response => {
+      const duration = Date.now() - startTime;
+      
+      // Performance-Logging
+      if (duration > 2000) { // Über 2 Sekunden
+        console.warn(`Slow request: ${duration}ms for ${event.request.url}`);
+        fetch('/api/performance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: event.request.url,
+            duration,
+            timestamp: new Date().toISOString(),
+            type: 'slow-request'
+          })
+        });
+      }
+      return response;
+    })
+  );
+});
 
 // Service Worker Aktivierung
 self.addEventListener('activate', (event) => {
@@ -46,10 +102,123 @@ self.addEventListener('notificationclick', (event) => {
   )
 })
 
-// Background Sync für offline Funktionalität
+// Push Handler für neue Benachrichtigungen
+self.addEventListener('push', (event) => {
+  const data = event.data.json();
+  
+  // Wichtige Daten extrahieren
+  const title = data.title || 'Neue Bestellung';
+  const body = data.body || 'Eine neue Bestellung wurde aufgegeben';
+  const orderId = data.orderId;
+  const type = data.type || 'new-order';
+  
+  // Push-Benachrichtigung anzeigen
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: body,
+      icon: '/icon-192x192.png',
+      data: { orderId, type },
+      tag: `order-${orderId || Date.now()}`,
+      requireInteraction: true,
+      vibrate: [200, 100, 200],
+      actions: [
+        {
+          action: 'view',
+          title: 'Bestellung anzeigen',
+          icon: '/icon-192x192.png'
+        }
+      ]
+    })
+  );
+});
+
+// Push-Subscription Change Handler
+self.addEventListener('pushsubscriptionchange', (event) => {
+  console.log('Push subscription changed, updating...');
+  event.waitUntil(
+    fetch('/api/update-subscription', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        subscription: event.newSubscription
+      })
+    })
+  );
+});
+
+// Helper für API-Timeouts
+const API_TIMEOUT = 30000; // 30 Sekunden Timeout
+
+function fetchWithTimeout(resource, options = {}) {
+  const { signal } = new AbortController();
+  const timeout = setTimeout(() => signal.abort(), API_TIMEOUT);
+  
+  return fetch(resource, {
+    ...options,
+    signal
+  }).finally(() => clearTimeout(timeout));
+}
+
+// Keep-Alive Mechanismus für Hintergrundaktivität
+let keepAliveTimer;
+
+function startKeepAlive() {
+  if (keepAliveTimer) {
+    clearTimeout(keepAliveTimer);
+  }
+  
+  keepAliveTimer = setTimeout(() => {
+    // Periodische Aktivität, um den Service Worker wach zu halten
+    self.registration.sync.register('keep-alive');
+    startKeepAlive(); // Wiederholen
+  }, 15 * 60 * 1000); // alle 15 Minuten
+}
+
+// Periodische Synchronisierung (wenn verfügbar)
+if ('periodicSync' in registration) {
+  try {
+    registration.periodicSync.register('periodic-sync', {
+      minInterval: 24 * 60 * 60 * 1000, // einmal pro Tag
+      powerState: 'auto',
+      networkState: 'any'
+    });
+  } catch (error) {
+    console.error('Periodic Sync nicht unterstützt:', error);
+  }
+}
+
+// Background Sync für spezifische Operationen
 self.addEventListener('sync', (event) => {
-  console.log('🔄 Background sync:', event.tag)
-})
+  if (event.tag === 'periodic-sync') {
+    // Periodische Synchronisierung
+    event.waitUntil(
+      syncData().catch(error => {
+        console.error('Synchronisierung fehlgeschlagen:', error);
+        // Versuche es später erneut
+        return self.registration.sync.register('periodic-sync');
+      })
+    );
+  }
+  
+  if (event.tag === 'keep-alive') {
+    // Keep-Alive Synchronisierung
+    event.waitUntil(
+      fetchWithTimeout('/api/keep-alive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
+  }
+});
+
+// Starte Keep-Alive beim Service Worker Start
+self.addEventListener('activate', (event) => {
+  console.log('✅ Service Worker activated');
+  event.waitUntil(self.clients.claim());
+  startKeepAlive(); // Keep-Alive starten
+});
 
 // Fetch Handler für Caching
 self.addEventListener('fetch', (event) => {
