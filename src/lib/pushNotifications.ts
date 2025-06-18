@@ -68,13 +68,33 @@ export class PushNotificationService {
       const testNotification = new Notification('Test', {
         body: 'Bitte erlauben Sie Benachrichtigungen für Bestellungen',
         requireInteraction: true,
-        vibrate: [200, 100, 200]
+        icon: '/icon-192x192.png',
+        badge: '/icon-192x192.png',
+        vibrate: [200, 100, 200, 100, 200],
+        actions: [
+          {
+            action: 'allow',
+            title: 'Erlauben',
+            icon: '/icon-192x192.png'
+          }
+        ]
       })
       
       // Warte auf Benutzerinteraktion
       await new Promise((resolve) => {
-        testNotification.onclick = () => resolve('granted')
-        testNotification.onclose = () => resolve(Notification.permission)
+        testNotification.onclick = () => {
+          // Wenn der Benutzer auf "Erlauben" klickt
+          if (Notification.permission === 'default') {
+            Notification.requestPermission().then(result => {
+              resolve(result)
+            })
+          } else {
+            resolve(Notification.permission)
+          }
+        }
+        testNotification.onclose = () => {
+          resolve(Notification.permission)
+        }
       })
       
       permission = Notification.permission
