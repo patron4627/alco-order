@@ -8,28 +8,8 @@
   ],
   "routes": [
     {
-      "src": "/api/update-subscription",
-      "dest": "api/update-subscription.ts",
-      "continue": true
-    },
-    {
-      "src": "/api/keep-alive",
-      "dest": "api/keep-alive.ts",
-      "continue": true
-    },
-    {
-      "src": "/api/error",
-      "dest": "api/error.ts",
-      "continue": true
-    },
-    {
-      "src": "/api/performance",
-      "dest": "api/performance.ts",
-      "continue": true
-    },
-    {
-      "src": "/api/send-notification",
-      "dest": "api/send-notification.ts",
+      "src": "/api/(.*)",
+      "dest": "api/$1.ts",
       "continue": true
     },
     {
