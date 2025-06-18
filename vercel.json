@@ -8,50 +8,37 @@
   ],
   "routes": [
     {
-      "/api/update-subscription": {
-        "handler": {
-          "path": "api/update-subscription.ts",
-          "runtime": "edge"
-        }
-      }
+      "src": "/api/update-subscription",
+      "dest": "api/update-subscription.ts",
+      "continue": true
     },
     {
-      "/api/keep-alive": {
-        "handler": {
-          "path": "api/keep-alive.ts",
-          "runtime": "edge"
-        }
-      }
+      "src": "/api/keep-alive",
+      "dest": "api/keep-alive.ts",
+      "continue": true
     },
     {
-      "/api/error": {
-        "handler": {
-          "path": "api/error.ts",
-          "runtime": "edge"
-        }
-      }
+      "src": "/api/error",
+      "dest": "api/error.ts",
+      "continue": true
     },
     {
-      "/api/performance": {
-        "handler": {
-          "path": "api/performance.ts",
-          "runtime": "edge"
-        }
-      }
+      "src": "/api/performance",
+      "dest": "api/performance.ts",
+      "continue": true
     },
     {
-      "/sw.js": {
-        "handler": {
-          "path": "public/sw.js"
-        }
-      }
+      "src": "/api/send-notification",
+      "dest": "api/send-notification.ts",
+      "continue": true
     },
     {
-      "/": {
-        "handler": {
-          "path": "dist/index.html"
-        }
-      }
+      "src": "/sw.js",
+      "dest": "public/sw.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/"
     }
   ],
   "env": {
