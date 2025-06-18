@@ -130,16 +130,18 @@ self.addEventListener('push', (event) => {
       badge,
       requireInteraction,
       vibrate,
-      actions,
+      actions: [
+        {
+          action: 'view',
+          title: 'Bestellung anzeigen',
+          icon: '/icon-192x192.png'
+        }
+      ],
       renotify,
       silent,
       tag: `order-${orderId || Date.now()}`,
       timestamp,
       data: { orderId, type }
-          title: 'Bestellung anzeigen',
-          icon: '/icon-192x192.png'
-        }
-      ]
     })
   );
 });
