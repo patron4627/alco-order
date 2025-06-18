@@ -17,6 +17,7 @@ const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting')
   const [pushEnabled, setPushEnabled] = useState(false)
+  const [permissionRequested, setPermissionRequested] = useState(false)
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
@@ -41,6 +42,24 @@ const AdminPage: React.FC = () => {
       }
     } catch (error) {
       console.error('❌ Failed to initialize push notifications:', error)
+    }
+  }
+
+  const requestPermission = async () => {
+    if (permissionRequested) return
+    
+    try {
+      setPermissionRequested(true)
+      const success = await pushNotificationService.initialize()
+      setPushEnabled(success)
+      
+      if (success) {
+        console.log('✅ Permission granted')
+      } else {
+        console.log('❌ Permission denied')
+      }
+    } catch (error) {
+      console.error('❌ Error requesting permission:', error)
     }
   }
 
@@ -255,7 +274,23 @@ const AdminPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100 p-4">
+      {/* Benachrichtigungs-Berechtigung */}
+      <div className="mb-4">
+        <button
+          onClick={requestPermission}
+          className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          disabled={permissionRequested || pushEnabled}
+        >
+          <Bell className="mr-2" />
+          {pushEnabled ? 'Benachrichtigungen aktiviert' : 'Benachrichtigungen aktivieren'}
+        </button>
+        {!pushEnabled && permissionRequested && (
+          <p className="mt-2 text-sm text-gray-600">
+            Bitte erlauben Sie Benachrichtigungen in Ihrem Browser
+          </p>
+        )}
+      </div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
           <div className="min-w-0 flex-1">
