@@ -23,7 +23,6 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800'
       case 'confirmed': return 'bg-blue-100 text-blue-800'
-      case 'ready': return 'bg-green-100 text-green-800'
       case 'completed': return 'bg-gray-100 text-gray-800'
       default: return 'bg-gray-100 text-gray-800'
     }
@@ -33,7 +32,6 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
     switch (status) {
       case 'pending': return 'Neu'
       case 'confirmed': return 'Bestätigt'
-      case 'ready': return 'Bereit'
       case 'completed': return 'Abgeholt'
       default: return status
     }
@@ -42,11 +40,6 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
   const handleStatusUpdate = async (newStatus: Order['status']) => {
     try {
       const updateData: any = { status: newStatus }
-      
-      // Setze ready_at wenn Status auf 'ready' geändert wird
-      if (newStatus === 'ready') {
-        updateData.ready_at = new Date().toISOString()
-      }
 
       const { error } = await supabase
         .from('orders')
@@ -66,8 +59,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
   const getNextStatus = (currentStatus: Order['status']) => {
     switch (currentStatus) {
       case 'pending': return 'confirmed'
-      case 'confirmed': return 'ready'
-      case 'ready': return 'completed'
+      case 'confirmed': return 'completed'
       default: return null
     }
   }
@@ -75,8 +67,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
   const getNextStatusText = (currentStatus: Order['status']) => {
     switch (currentStatus) {
       case 'pending': return 'Bestätigen'
-      case 'confirmed': return 'Als bereit markieren'
-      case 'ready': return 'Als abgeholt markieren'
+      case 'confirmed': return 'Als abgeholt markieren'
       default: return null
     }
   }
@@ -85,8 +76,8 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
   const nextStatusText = getNextStatusText(order.status)
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-orange-500">
-      <div className="flex justify-between items-start mb-4">
+    <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 border-l-4 border-orange-500">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-4 space-y-2 sm:space-y-0">
         <div className="flex items-center space-x-2">
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
             {getStatusText(order.status)}
@@ -100,19 +91,19 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
         </span>
       </div>
 
-      <div className="space-y-3 mb-4">
+      <div className="space-y-2 sm:space-y-3 mb-4">
         <div className="flex items-center space-x-2 text-sm text-gray-600">
-          <User className="w-4 h-4" />
-          <span>{order.customer_name}</span>
+          <User className="w-4 h-4 flex-shrink-0" />
+          <span className="break-words">{order.customer_name}</span>
         </div>
         
         <div className="flex items-center space-x-2 text-sm text-gray-600">
-          <Phone className="w-4 h-4" />
-          <span>{order.customer_phone}</span>
+          <Phone className="w-4 h-4 flex-shrink-0" />
+          <span className="break-all">{order.customer_phone}</span>
         </div>
         
         <div className="flex items-center space-x-2 text-sm text-gray-600">
-          <Clock className="w-4 h-4" />
+          <Clock className="w-4 h-4 flex-shrink-0" />
           <span>Abholung: {formatTime(order.pickup_time)}</span>
         </div>
       </div>
@@ -122,17 +113,17 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
         <div className="space-y-2">
           {order.items.map((item, index) => (
             <div key={index} className="text-sm">
-              <div className="flex justify-between">
-                <span className="font-medium">{item.quantity}x {item.name}</span>
-                <span>{(item.price * item.quantity).toFixed(2)}€</span>
+              <div className="flex justify-between items-start">
+                <span className="font-medium flex-1 pr-2">{item.quantity}x {item.name}</span>
+                <span className="flex-shrink-0">{(item.price * item.quantity).toFixed(2)}€</span>
               </div>
               {/* Zeige gewählte Optionen an */}
               {item.selectedOptions && item.selectedOptions.length > 0 && (
                 <div className="ml-4 mt-1 space-y-1">
                   {item.selectedOptions.map((option, optIndex) => (
                     <div key={optIndex} className="flex justify-between text-xs text-gray-600">
-                      <span>+ {option.name}</span>
-                      <span>+{option.price.toFixed(2)}€</span>
+                      <span className="flex-1 pr-2">+ {option.name}</span>
+                      <span className="flex-shrink-0">+{option.price.toFixed(2)}€</span>
                     </div>
                   ))}
                 </div>
@@ -145,7 +136,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
       {order.notes && (
         <div className="border-t pt-4 mb-4">
           <h4 className="font-medium text-gray-900 mb-1">Notizen:</h4>
-          <p className="text-sm text-gray-600">{order.notes}</p>
+          <p className="text-sm text-gray-600 break-words">{order.notes}</p>
         </div>
       )}
 
@@ -153,7 +144,7 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
         <div className="border-t pt-4">
           <button
             onClick={() => handleStatusUpdate(nextStatus)}
-            className="w-full flex items-center justify-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white py-2 px-4 rounded-lg font-medium transition-colors"
+            className="w-full flex items-center justify-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white py-3 px-4 rounded-lg font-medium transition-colors touch-manipulation"
           >
             <CheckCircle className="w-4 h-4" />
             <span>{nextStatusText}</span>
@@ -163,9 +154,6 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onStatusUpdate }) => {
 
       <div className="text-xs text-gray-500 mt-2">
         Bestellt: {formatTime(order.created_at)}
-        {order.ready_at && (
-          <span className="ml-2">• Bereit: {formatTime(order.ready_at)}</span>
-        )}
       </div>
     </div>
   )

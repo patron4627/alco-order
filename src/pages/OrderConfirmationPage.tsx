@@ -4,6 +4,7 @@ import { CheckCircle, Clock, Phone, User, Home } from 'lucide-react'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
 import OrderTimer from '../components/OrderTimer'
+import { pushNotificationService } from '../lib/pushNotifications'
 
 const OrderConfirmationPage: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>()
@@ -14,74 +15,91 @@ const OrderConfirmationPage: React.FC = () => {
 
   useEffect(() => {
     if (orderId) {
+      initializePushNotifications()
       fetchOrder()
-      
-      // Setup realtime subscription
-      console.log('🔄 OrderConfirmation: Setting up realtime subscription for:', orderId)
-      
-      const channel = supabase
-        .channel(`order-confirmation-${orderId}`, {
-          config: {
-            broadcast: { self: false },
-            presence: { key: orderId }
-          }
-        })
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'orders',
-            filter: `id=eq.${orderId}`
-          },
-          (payload) => {
-            console.log('🔔 OrderConfirmation: Order update received:', payload)
-            
-            const updatedOrder = payload.new as Order
-            console.log('📋 Updated order status:', updatedOrder.status)
-            
-            setOrder(updatedOrder)
-            
-            // Timer ausblenden und Benachrichtigung zeigen wenn bestätigt
-            if (updatedOrder.status !== 'pending') {
-              console.log('✅ Order confirmed! Hiding timer...')
-              setShowTimer(false)
-              
-              // Browser-Benachrichtigung
-              if (Notification.permission === 'granted') {
-                new Notification('🎉 Bestellung bestätigt!', {
-                  body: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
-                  icon: '/icon-192x192.png',
-                  tag: 'order-confirmed-' + orderId
-                })
-              }
-              
-              // Bestätigungston
-              playNotificationSound()
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log('📡 OrderConfirmation subscription status:', status)
-          
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ Successfully subscribed to order updates')
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('❌ OrderConfirmation: Channel error')
-          }
-        })
-
-      // Notification Permission anfragen
-      if (Notification.permission === 'default') {
-        Notification.requestPermission()
-      }
-
-      return () => {
-        console.log('🔌 OrderConfirmation: Unsubscribing')
-        supabase.removeChannel(channel)
-      }
+      setupRealtimeConnection()
     }
   }, [orderId])
+
+  const initializePushNotifications = async () => {
+    console.log('📱 Initializing push notifications for customer...')
+    
+    try {
+      await pushNotificationService.initialize()
+      console.log('✅ Push notifications ready for customer')
+    } catch (error) {
+      console.error('❌ Failed to initialize push notifications:', error)
+    }
+  }
+
+  const setupRealtimeConnection = () => {
+    if (!orderId) return
+
+    console.log('🔄 OrderConfirmation: Setting up optimized realtime connection for:', orderId)
+    
+    // Eindeutiger Channel-Name für diese Bestellung
+    const channelName = `order-confirmation-${orderId}-${Date.now()}`
+    
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: false },
+          presence: { key: `customer-${orderId}` },
+          private: false
+        }
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${orderId}`
+        },
+        async (payload) => {
+          console.log('🔔 OrderConfirmation: Order update received:', payload)
+          
+          const updatedOrder = payload.new as Order
+          console.log('📋 Updated order status:', updatedOrder.status)
+          
+          // Sofort Order State aktualisieren
+          setOrder(updatedOrder)
+          
+          // Timer ausblenden wenn bestätigt
+          if (updatedOrder.status !== 'pending') {
+            console.log('✅ Order confirmed! Hiding timer...')
+            setShowTimer(false)
+            
+            // Push Notification für Bestätigung
+            await pushNotificationService.showOrderConfirmationNotification(orderId)
+            
+            // Bestätigungston
+            playConfirmationSound()
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 OrderConfirmation subscription status:', status)
+        
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Customer successfully subscribed to order updates')
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ OrderConfirmation: Channel error, retrying...')
+          // Automatisch nach 2 Sekunden neu verbinden
+          setTimeout(() => {
+            console.log('🔄 Customer attempting to reconnect...')
+            setupRealtimeConnection()
+          }, 2000)
+        } else if (status === 'TIMED_OUT') {
+          console.error('⏰ OrderConfirmation: Channel timed out')
+        }
+      })
+
+    return () => {
+      console.log('🔌 OrderConfirmation: Unsubscribing')
+      supabase.removeChannel(channel)
+    }
+  }
 
   const fetchOrder = async () => {
     if (!orderId) return
@@ -113,7 +131,7 @@ const OrderConfirmationPage: React.FC = () => {
     }
   }
 
-  const playNotificationSound = () => {
+  const playConfirmationSound = () => {
     try {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
       const oscillator = audioContext.createOscillator()
@@ -128,13 +146,13 @@ const OrderConfirmationPage: React.FC = () => {
       oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.2)
       oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.3)
       
-      gainNode.gain.setValueAtTime(0.8, audioContext.currentTime)
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
       
       oscillator.start(audioContext.currentTime)
       oscillator.stop(audioContext.currentTime + 0.5)
     } catch (error) {
-      console.log('Could not play notification sound:', error)
+      console.log('Could not play confirmation sound:', error)
     }
   }
 
@@ -153,7 +171,7 @@ const OrderConfirmationPage: React.FC = () => {
       case 'pending':
         return {
           title: 'Bestellung eingegangen!',
-          message: 'Ihre Bestellung wird bearbeitet. Sie erhalten eine Bestätigung, sobald sie bereit ist.',
+          message: 'Ihre Bestellung wird bearbeitet. Sie erhalten automatisch eine Bestätigung.',
           color: 'text-yellow-600',
           bgColor: 'bg-yellow-100'
         }

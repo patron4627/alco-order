@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react'
-import { supabase } from '../lib/supabase'
 
 interface OrderTimerProps {
   orderId: string
@@ -27,89 +26,12 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
     return () => clearInterval(timer)
   }, [timeLeft, isConfirmed])
 
+  // Vereinfachter Timer ohne eigene Realtime-Logik
+  // Die Realtime-Updates werden von der Parent-Komponente gehandhabt
   useEffect(() => {
-    console.log('🔄 OrderTimer: Setting up realtime subscription for order:', orderId)
-    
-    const channel = supabase
-      .channel(`order-timer-${orderId}`, {
-        config: {
-          broadcast: { self: false },
-          presence: { key: orderId }
-        }
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'orders',
-          filter: `id=eq.${orderId}`
-        },
-        (payload) => {
-          console.log('🔔 OrderTimer: Order update received:', payload)
-          
-          const updatedOrder = payload.new as any
-          console.log('📋 Order status:', updatedOrder.status)
-          
-          if (updatedOrder.status !== 'pending') {
-            console.log('✅ Order confirmed! Hiding timer...')
-            setIsConfirmed(true)
-            onConfirmation()
-            
-            // Browser-Benachrichtigung
-            if (Notification.permission === 'granted') {
-              new Notification('🎉 Bestellung bestätigt!', {
-                body: 'Ihre Bestellung wurde bestätigt und wird zubereitet.',
-                icon: '/icon-192x192.png',
-                tag: 'order-confirmed-' + orderId
-              })
-            }
-            
-            // Bestätigungston
-            playConfirmationSound()
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 OrderTimer subscription status:', status)
-        
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ OrderTimer successfully subscribed')
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ OrderTimer: Channel error')
-        }
-      })
-
-    return () => {
-      console.log('🔌 OrderTimer: Unsubscribing')
-      supabase.removeChannel(channel)
-    }
-  }, [orderId, onConfirmation])
-
-  const playConfirmationSound = () => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      
-      // Freudiger Bestätigungston
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.1)
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.2)
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.3)
-      
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
-    } catch (error) {
-      console.log('Could not play confirmation sound:', error)
-    }
-  }
+    // Dieser Timer wird von der OrderConfirmationPage gesteuert
+    console.log('🔄 OrderTimer: Initialized for order:', orderId)
+  }, [orderId])
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -171,7 +93,7 @@ const OrderTimer: React.FC<OrderTimerProps> = ({ orderId, onConfirmation }) => {
           </h3>
         </div>
         <p className="text-blue-700 text-sm">
-          Bitte bleiben Sie auf dieser Seite. Sie erhalten eine sofortige Benachrichtigung, sobald Ihre Bestellung bestätigt wird.
+          Sie erhalten automatisch eine Benachrichtigung, sobald Ihre Bestellung bestätigt wird.
         </p>
       </div>
 

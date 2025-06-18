@@ -1,162 +1,61 @@
 import React, { useState, useEffect } from 'react'
-import { Bell, RefreshCw, Filter, LogOut, Settings } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
+import { Bell, RefreshCw, Filter, LogOut, Settings, Plus, Smartphone } from 'lucide-react'
 import { Order } from '../types'
-import AdminLogin from '../components/AdminLogin'
+import { supabase } from '../lib/supabase'
 import OrderCard from '../components/OrderCard'
+import AdminLogin from '../components/AdminLogin'
 import MenuManagement from '../components/MenuManagement'
+import { useAuth } from '../context/AuthContext'
+import { pushNotificationService } from '../lib/pushNotifications'
 
-// Definiere die Typen für die JSX-Elemente
-interface JSXElementProps {
-  children?: React.ReactNode
-  className?: string
-  onClick?: () => void
-  style?: React.CSSProperties
-  type?: string
-  value?: string
-  checked?: boolean
-  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
-  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
-}
-
-interface AdminPageProps {}
-
-const AdminPage: React.FC<AdminPageProps> = () => {
+const AdminPage: React.FC = () => {
   const { isAdminAuthenticated, logout } = useAuth()
   const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
+  const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'all' | Order['status']>('all')
-  const [audioEnabled, setAudioEnabled] = useState<boolean>(true)
+  const [audioEnabled, setAudioEnabled] = useState(true)
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting')
+  const [pushEnabled, setPushEnabled] = useState(false)
 
-  // Funktionen an den Anfang stellen
-  const fetchOrders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (error) throw error
-      
-      if (data) {
-        setOrders(data as Order[])
-      }
-    } catch (error) {
-      console.error('❌ Fehler beim Laden der Bestellungen:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const playNewOrderSound = () => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      
-      oscillator.type = 'sine'
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-      oscillator.connect(audioContext.destination)
-      
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
-    } catch (error) {
-      console.error('❌ Fehler beim Abspielen des Tons:', error)
-    }
-  }
-
-  const handleStatusUpdate = async (order: Order, status: Order['status']) => {
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status })
-        .eq('id', order.id)
-      
-      if (error) throw error
-      
-      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status } : o))
-    } catch (error) {
-      console.error('❌ Fehler beim Aktualisieren des Status:', error)
-    }
-  }
-
-  // Page Visibility API für App-Neuladen
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Prüfe ob die App im Hintergrund war
-        if (document.hidden) {
-          // App neu laden wenn aus Hintergrund zurückkehrt
-          window.location.reload();
-        } else {
-          // Aktualisiere nur die Daten wenn die App im Vordergrund war
-          fetchOrders();
-        }
-      } else {
-        // Speichere die aktuelle Session beim Hintergrundwechsel
-        const currentSession = supabase.auth.getSession();
-        localStorage.setItem('supabaseSession', JSON.stringify(currentSession));
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    // Cleanup beim Komponenten-Unmount
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [fetchOrders]);
-
-  // Push-Benachrichtigungen einrichten
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
-    // Prüfe ob Push-Benachrichtigungen unterstützt werden
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.log('Push-Benachrichtigungen werden nicht unterstützt')
-      return
-    }
-
-    // Service Worker registrieren
-    navigator.serviceWorker.register('/service-worker.js')
-      .then(registration => {
-        // Prüfe ob Push-Benachrichtigungen bereits erlaubt sind
-        if (Notification.permission === 'granted') {
-          return registration.pushManager.getSubscription()
-        }
-        
-        // Wenn Benachrichtigungen noch nicht erlaubt sind
-        if (Notification.permission === 'default') {
-          Notification.requestPermission()
-            .then(permission => {
-              if (permission === 'granted') {
-                console.log('✅ Push-Benachrichtigungen wurden erlaubt')
-                // Speichere die Erlaubnis persistiernd
-                localStorage.setItem('notificationsEnabled', 'true')
-              }
-            })
-            .catch(error => {
-              console.error('❌ Fehler bei Push-Benachrichtigungs-Erlaubnis:', error)
-            })
-        }
-      })
-      .catch(error => {
-        console.error('❌ Fehler beim Registrieren des Service Workers:', error)
-      })
+    initializePushNotifications()
+    fetchOrders()
+    setupRealtimeConnection()
   }, [isAdminAuthenticated])
 
-  // Realtime Subscription
-  useEffect(() => {
-    if (!isAdminAuthenticated) return
+  const initializePushNotifications = async () => {
+    console.log('📱 Initializing push notifications for admin...')
+    
+    try {
+      const success = await pushNotificationService.initialize()
+      setPushEnabled(success)
+      
+      if (success) {
+        console.log('✅ Push notifications enabled for admin')
+        pushNotificationService.startKeepAlive()
+      } else {
+        console.log('❌ Push notifications not available')
+      }
+    } catch (error) {
+      console.error('❌ Failed to initialize push notifications:', error)
+    }
+  }
 
-    fetchOrders()
+  const setupRealtimeConnection = () => {
+    console.log('🔄 Admin: Setting up optimized realtime connection...')
+    
+    // Eindeutiger Channel-Name für Admin
+    const channelName = `admin-orders-${Date.now()}`
     
     const channel = supabase
-      .channel('admin-orders', {
+      .channel(channelName, {
         config: {
           broadcast: { self: false },
-          presence: { key: 'admin' }
+          presence: { key: 'admin-dashboard' },
+          private: false
         }
       })
       .on(
@@ -166,88 +65,170 @@ const AdminPage: React.FC<AdminPageProps> = () => {
           schema: 'public',
           table: 'orders'
         },
-        (payload: any) => {
+        async (payload) => {
+          console.log('🔔 Admin: Realtime event received:', payload.eventType, payload)
+          setConnectionStatus('connected')
+          
           if (payload.eventType === 'INSERT') {
             const newOrder = payload.new as Order
+            console.log('➕ New order received:', newOrder.id)
+            
+            // Sofort zur Liste hinzufügen
             setOrders(prev => {
               const exists = prev.find(order => order.id === newOrder.id)
-              if (exists) return prev
+              if (exists) {
+                console.log('⚠️ Order already exists, updating instead')
+                return prev.map(order => order.id === newOrder.id ? newOrder : order)
+              }
+              console.log('✅ Adding new order to list')
               return [newOrder, ...prev]
             })
             
-            if (audioEnabled) {
-              playNewOrderSound()
+            // Push Notification für neue Bestellung
+            if (pushEnabled) {
+              await pushNotificationService.showNewOrderNotification({
+                customerName: newOrder.customer_name,
+                totalAmount: newOrder.total_amount,
+                orderId: newOrder.id
+              })
             }
             
-            // Browser-Benachrichtigung und Sound
-            try {
-              if (audioEnabled) {
-                playNewOrderSound()
-              }
-              
-              if (Notification.permission === 'granted') {
-                const notification = new Notification('🔔 Neue Bestellung!', {
-                  body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                  icon: '/icon-192x192.png',
-                  tag: 'new-order-' + newOrder.id,
-                  requireInteraction: true
-                })
-                notification.onclick = () => window.focus()
-              }
-            } catch (error) {
-              console.error('❌ Fehler bei Benachrichtigung:', error)
+            // Zusätzlicher Sound wenn Audio aktiviert
+            if (audioEnabled) {
+              playUrgentNotificationSound()
             }
-
-            // Push-Benachrichtigung für Hintergrund-Benachrichtigungen
-            try {
-              if (Notification.permission === 'granted') {
-                const sendPushNotification = async () => {
-                  const { data, error } = await supabase
-                    .from('push_notifications')
-                    .insert({
-                      title: '🔔 Neue Bestellung!',
-                      body: `${newOrder.customer_name} - ${newOrder.total_amount.toFixed(2)}€`,
-                      tag: 'new-order-' + newOrder.id,
-                      webhook_url: process.env.NEXT_PUBLIC_PUSH_WEBHOOK_URL
-                    })
-
-                  if (error) {
-                    console.error('❌ Fehler beim Senden der Push-Benachrichtigung:', error)
-                  }
-                }
-                
-                // Async Funktion ausführen
-                sendPushNotification()
-              }
-            } catch (error) {
-              console.error('❌ Fehler bei Push-Benachrichtigung:', error)
-            }
+            
           } else if (payload.eventType === 'UPDATE') {
             const updatedOrder = payload.new as Order
+            console.log('🔄 Order updated:', updatedOrder.id, updatedOrder.status)
+            
             setOrders(prev => prev.map(order => 
               order.id === updatedOrder.id ? updatedOrder : order
             ))
+            
           } else if (payload.eventType === 'DELETE') {
             const deletedOrder = payload.old as Order
+            console.log('🗑️ Order deleted:', deletedOrder.id)
+            
             setOrders(prev => prev.filter(order => order.id !== deletedOrder.id))
           }
         }
       )
-      .subscribe((status: any) => {
+      .subscribe((status) => {
+        console.log('📡 Admin subscription status:', status)
+        
         if (status === 'SUBSCRIBED') {
           console.log('✅ Admin successfully subscribed to realtime updates')
+          setConnectionStatus('connected')
         } else if (status === 'CHANNEL_ERROR') {
           console.error('❌ Admin channel error')
+          setConnectionStatus('disconnected')
+          // Automatisch nach 3 Sekunden neu verbinden
+          setTimeout(() => {
+            console.log('🔄 Attempting to reconnect...')
+            setupRealtimeConnection()
+          }, 3000)
+        } else if (status === 'TIMED_OUT') {
+          console.error('⏰ Admin channel timed out')
+          setConnectionStatus('disconnected')
+        } else {
+          setConnectionStatus('connecting')
         }
       })
 
+    // Cleanup function
     return () => {
+      console.log('🔌 Admin: Unsubscribing from realtime')
       supabase.removeChannel(channel)
     }
-  }, [isAdminAuthenticated, audioEnabled])
+  }
+
+  const fetchOrders = async () => {
+    try {
+      console.log('📥 Fetching orders...')
+      setConnectionStatus('connecting')
+      
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('❌ Error fetching orders:', error)
+        throw error
+      }
+      
+      console.log('✅ Orders fetched:', data?.length || 0)
+      setOrders(data || [])
+      setConnectionStatus('connected')
+    } catch (error) {
+      console.error('Error fetching orders:', error)
+      setConnectionStatus('disconnected')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const playUrgentNotificationSound = () => {
+    try {
+      // Sehr laute und dringende Benachrichtigungssequenz für Restaurant
+      const playTone = (frequency: number, duration: number, delay: number = 0, volume: number = 0.8) => {
+        setTimeout(() => {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+          
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+          
+          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime)
+          gainNode.gain.setValueAtTime(volume, audioContext.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
+          
+          oscillator.start(audioContext.currentTime)
+          oscillator.stop(audioContext.currentTime + duration)
+        }, delay)
+      }
+      
+      // Sehr laute und dringende Sequenz: 6 Töne mit hoher Lautstärke
+      playTone(1000, 0.3, 0, 0.9)      // Sehr laut
+      playTone(1200, 0.3, 400, 0.9)    // Sehr laut
+      playTone(1000, 0.3, 800, 0.9)    // Sehr laut
+      playTone(1400, 0.3, 1200, 0.9)   // Sehr laut
+      playTone(1000, 0.4, 1600, 0.9)   // Sehr laut und länger
+      playTone(1200, 0.4, 2100, 0.9)   // Sehr laut und länger
+      
+    } catch (error) {
+      console.log('Could not play notification sound:', error)
+    }
+  }
+
+  const handleStatusUpdate = (orderId: string, newStatus: Order['status']) => {
+    setOrders(prev => prev.map(order => 
+      order.id === orderId ? { ...order, status: newStatus } : order
+    ))
+  }
 
   const handleLogout = () => {
     logout()
+  }
+
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'connected': return 'text-green-600'
+      case 'connecting': return 'text-yellow-600'
+      case 'disconnected': return 'text-red-600'
+      default: return 'text-gray-600'
+    }
+  }
+
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected': return '🟢 Live'
+      case 'connecting': return '🟡 Verbinde...'
+      case 'disconnected': return '🔴 Getrennt'
+      default: return '⚪ Unbekannt'
+    }
   }
 
   if (!isAdminAuthenticated) {
@@ -275,55 +256,69 @@ const AdminPage: React.FC<AdminPageProps> = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-gray-600">
-              {activeTab === 'orders' ? 'Verwalten Sie eingehende Bestellungen' : 'Verwalten Sie Ihr Menü'}
-            </p>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Admin Dashboard</h1>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 mt-2 space-y-2 sm:space-y-0">
+              <p className="text-gray-600 text-sm sm:text-base">
+                {activeTab === 'orders' ? 'Verwalten Sie eingehende Bestellungen' : 'Verwalten Sie Ihr Menü'}
+              </p>
+              <div className="flex items-center space-x-4">
+                <div className={`flex items-center space-x-1 text-sm ${getConnectionStatusColor()}`}>
+                  <span>{getConnectionStatusText()}</span>
+                </div>
+                {pushEnabled && (
+                  <div className="flex items-center space-x-1 text-sm text-green-600">
+                    <Smartphone className="w-4 h-4" />
+                    <span className="hidden sm:inline">📱 Push aktiv</span>
+                    <span className="sm:hidden">📱</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
             {activeTab === 'orders' && (
               <>
                 <button
                   onClick={() => setAudioEnabled(!audioEnabled)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg border transition-colors ${
+                  className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 rounded-lg border transition-colors text-sm ${
                     audioEnabled 
                       ? 'bg-orange-500 text-white border-orange-500' 
                       : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
                   <Bell className="w-4 h-4" />
-                  <span>{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
+                  <span className="hidden sm:inline">{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
                 </button>
 
                 <button
                   onClick={fetchOrders}
-                  className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+                  className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors text-sm"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  <span>Aktualisieren</span>
+                  <span className="hidden sm:inline">Aktualisieren</span>
                 </button>
               </>
             )}
 
             <button
               onClick={handleLogout}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+              className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors text-sm"
             >
               <LogOut className="w-4 h-4" />
-              <span>Abmelden</span>
+              <span className="hidden sm:inline">Abmelden</span>
             </button>
           </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="bg-white rounded-lg shadow-sm p-1 mb-6 inline-flex">
+        <div className="bg-white rounded-lg shadow-sm p-1 mb-6 inline-flex w-full sm:w-auto overflow-x-auto">
           <button
             onClick={() => setActiveTab('orders')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`flex items-center space-x-2 px-3 sm:px-4 py-2 rounded-md font-medium transition-colors text-sm whitespace-nowrap ${
               activeTab === 'orders'
                 ? 'bg-orange-500 text-white shadow-sm'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -340,7 +335,7 @@ const AdminPage: React.FC<AdminPageProps> = () => {
           
           <button
             onClick={() => setActiveTab('menu')}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`flex items-center space-x-2 px-3 sm:px-4 py-2 rounded-md font-medium transition-colors text-sm whitespace-nowrap ${
               activeTab === 'menu'
                 ? 'bg-orange-500 text-white shadow-sm'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -355,66 +350,57 @@ const AdminPage: React.FC<AdminPageProps> = () => {
           <>
             {/* Status Filter */}
             <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-              <div className="flex items-center space-x-4 overflow-x-auto">
-                <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 sm:space-x-4 overflow-x-auto pb-2">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   <Filter className="w-4 h-4 text-gray-500" />
                   <span className="text-sm font-medium text-gray-700">Filter:</span>
                 </div>
                 
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-orange-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Alle ({orders.length})
-                </button>
+                <div className="flex space-x-2 min-w-max">
+                  <button
+                    onClick={() => setStatusFilter('all')}
+                    className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                      statusFilter === 'all'
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Alle ({orders.length})
+                  </button>
 
-                <button
-                  onClick={() => setStatusFilter('pending')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'pending'
-                      ? 'bg-yellow-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  🔔 Neu ({getStatusCount('pending')})
-                </button>
+                  <button
+                    onClick={() => setStatusFilter('pending')}
+                    className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                      statusFilter === 'pending'
+                        ? 'bg-yellow-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    🔔 Neu ({getStatusCount('pending')})
+                  </button>
 
-                <button
-                  onClick={() => setStatusFilter('confirmed')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'confirmed'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  ✅ Bestätigt ({getStatusCount('confirmed')})
-                </button>
+                  <button
+                    onClick={() => setStatusFilter('confirmed')}
+                    className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                      statusFilter === 'confirmed'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    ✅ Bestätigt ({getStatusCount('confirmed')})
+                  </button>
 
-                <button
-                  onClick={() => setStatusFilter('ready')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'ready'
-                      ? 'bg-green-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  🍽️ Bereit ({getStatusCount('ready')})
-                </button>
-
-                <button
-                  onClick={() => setStatusFilter('completed')}
-                  className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
-                    statusFilter === 'completed'
-                      ? 'bg-gray-500 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  👍 Abgeholt ({getStatusCount('completed')})
-                </button>
+                  <button
+                    onClick={() => setStatusFilter('completed')}
+                    className={`px-3 py-1 text-sm rounded-full whitespace-nowrap transition-colors ${
+                      statusFilter === 'completed'
+                        ? 'bg-gray-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    👍 Abgeholt ({getStatusCount('completed')})
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -427,15 +413,20 @@ const AdminPage: React.FC<AdminPageProps> = () => {
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
                   {statusFilter === 'all' ? 'Keine Bestellungen vorhanden' : `Keine ${statusFilter} Bestellungen`}
                 </h3>
-                <p className="text-gray-600">
+                <p className="text-gray-600 mb-4">
                   {statusFilter === 'all' 
-                    ? 'Sobald Kunden bestellen, erscheinen die Bestellungen hier automatisch mit Ton.'
+                    ? 'Neue Bestellungen erscheinen automatisch hier mit Push-Benachrichtigung.'
                     : 'Bestellungen mit diesem Status werden hier angezeigt.'
                   }
                 </p>
+                {pushEnabled && (
+                  <p className="text-green-600 text-sm">
+                    📱 Push-Benachrichtigungen sind aktiv - Sie werden auch im Hintergrund benachrichtigt!
+                  </p>
+                )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
                 {filteredOrders.map((order) => (
                   <OrderCard 
                     key={order.id} 
