@@ -3,8 +3,8 @@ import { WebPushProvider } from '@vercel/web-push';
 const webPush = new WebPushProvider({
   vapidDetails: {
     subject: 'mailto:your-email@example.com',
-    publicKey: window.VercelEnv.PUSH_PUBLIC_KEY,
-    privateKey: window.VercelEnv.PUSH_PRIVATE_KEY,
+    publicKey: request.env.PUSH_PUBLIC_KEY,
+    privateKey: request.env.PUSH_PRIVATE_KEY,
   },
 });
 

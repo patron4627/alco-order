@@ -76,7 +76,7 @@ export class PushNotificationService {
       const subscription = await this.registration.pushManager.getSubscription()
       return subscription || await this.registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: window.VercelEnv.PUSH_PUBLIC_KEY
+        applicationServerKey: window.env.PUSH_PUBLIC_KEY
       })
     } catch (error) {
       console.error('❌ Failed to get subscription:', error)

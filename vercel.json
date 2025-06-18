@@ -54,12 +54,13 @@
       }
     }
   ],
-  "env": [
-    "VERCEL_TOKEN",
-    "PUSH_PUBLIC_KEY",
-    "SUPABASE_URL",
-    "SUPABASE_ANON_KEY"
-  ],
+  "env": {
+    "VERCEL_TOKEN": "required",
+    "PUSH_PUBLIC_KEY": "required",
+    "PUSH_PRIVATE_KEY": "required",
+    "SUPABASE_URL": "optional",
+    "SUPABASE_ANON_KEY": "optional"
+  },
   "headers": [
     {
       "source": "/api/(.*)",
