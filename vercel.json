@@ -6,28 +6,21 @@
       "use": "@vercel/static-build"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "api/$1.ts",
+      "source": "/api/(.*)",
+      "destination": "api/$1.ts",
       "continue": true
     },
     {
-      "src": "/sw.js",
-      "dest": "public/sw.js"
+      "source": "/sw.js",
+      "destination": "public/sw.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "/"
+      "source": "/(.*)",
+      "destination": "/"
     }
   ],
-  "env": {
-    "VERCEL_TOKEN": "required",
-    "PUSH_PUBLIC_KEY": "required",
-    "PUSH_PRIVATE_KEY": "required",
-    "SUPABASE_URL": "optional",
-    "SUPABASE_ANON_KEY": "optional"
-  },
   "headers": [
     {
       "source": "/api/(.*)",
@@ -42,5 +35,12 @@
         }
       ]
     }
-  ]
+  ],
+  "env": {
+    "VERCEL_TOKEN": "required",
+    "PUSH_PUBLIC_KEY": "required",
+    "PUSH_PRIVATE_KEY": "required",
+    "SUPABASE_URL": "optional",
+    "SUPABASE_ANON_KEY": "optional"
+  }
 }
