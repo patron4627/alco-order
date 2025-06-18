@@ -59,10 +59,25 @@ export class PushNotificationService {
   async requestPermission(): Promise<NotificationPermission> {
     if (!this.isSupported) return 'denied'
 
+    // Prüfe ob wir bereits eine Berechtigung haben
     let permission = Notification.permission
 
+    // Wenn keine Berechtigung, fordere sie an
     if (permission === 'default') {
-      permission = await Notification.requestPermission()
+      // Erstelle eine temporäre Benachrichtigung zum Testen
+      const testNotification = new Notification('Test', {
+        body: 'Bitte erlauben Sie Benachrichtigungen für Bestellungen',
+        requireInteraction: true,
+        vibrate: [200, 100, 200]
+      })
+      
+      // Warte auf Benutzerinteraktion
+      await new Promise((resolve) => {
+        testNotification.onclick = () => resolve('granted')
+        testNotification.onclose = () => resolve(Notification.permission)
+      })
+      
+      permission = Notification.permission
     }
 
     console.log('📱 Notification permission:', permission)
@@ -122,29 +137,27 @@ export class PushNotificationService {
     vibrate?: number[]
     sound?: boolean
   } = {}): Promise<void> {
-    if (!this.isSupported || Notification.permission !== 'granted') {
-      console.log('❌ Cannot show notification - permission denied or not supported')
-      return
-    }
-
-    const defaultOptions = {
-      icon: '/icon-192x192.png',
-      badge: '/icon-192x192.png',
-      requireInteraction: true,
-      vibrate: [200, 100, 200, 100, 200],
-      ...options
-    }
-
     try {
-      if (this.registration) {
-        // Service Worker Notification (funktioniert im Hintergrund)
-        await this.registration.showNotification(title, defaultOptions)
-        console.log('✅ Service Worker notification shown')
-      } else {
-        // Fallback: Browser Notification
-        new Notification(title, defaultOptions)
-        console.log('✅ Browser notification shown')
+      // Prüfe ob Benachrichtigungen erlaubt sind
+      if (Notification.permission !== 'granted') {
+        console.log('❌ Notification permission not granted')
+        return
       }
+
+      // Erstelle Benachrichtigung mit Standardwerten
+      const notification = new Notification(title, {
+        body: options.body || 'Eine neue Bestellung wurde aufgegeben',
+        icon: options.icon || '/icon-192x192.png',
+        badge: options.badge || '/icon-192x192.png',
+        tag: options.tag || 'new-order',
+        requireInteraction: options.requireInteraction || true,
+        vibrate: options.vibrate || [200, 100, 200, 100, 200],
+        data: options.data,
+        priority: 'high',
+        timestamp: Date.now(),
+        renotify: true,
+        silent: false
+      })
 
       // Sound abspielen
       if (options.sound !== false) {
