@@ -242,6 +242,14 @@ const AdminPage: React.FC = () => {
                     <span className="sm:hidden">📱</span>
                   </div>
                 )}
+                
+                {/* Debug Info */}
+                <div className="flex items-center space-x-1 text-sm text-blue-600">
+                  <span>🔧 Debug:</span>
+                  <span>SW: {'serviceWorker' in navigator ? '✅' : '❌'}</span>
+                  <span>Push: {'PushManager' in window ? '✅' : '❌'}</span>
+                  <span>Perm: {Notification.permission}</span>
+                </div>
               </div>
             </div>
           </div>

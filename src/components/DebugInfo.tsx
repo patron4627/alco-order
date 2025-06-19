@@ -1,6 +1,4 @@
 import React, { useState } from 'react'
-import { Bell, Smartphone, X } from 'lucide-react'
-import { webPushService } from '../lib/webPushService'
 
 const DebugInfo: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false)
@@ -8,64 +6,135 @@ const DebugInfo: React.FC = () => {
   const testPush = async () => {
     try {
       console.log('🧪 Testing push notification...')
-      await webPushService.sendPushNotification({
-        title: '🧪 Test Benachrichtigung',
-        body: 'Dies ist eine Test-Push-Benachrichtigung',
-        icon: '/icon-192x192.png',
-        tag: 'test-notification'
-      })
-      console.log('✅ Test push sent successfully')
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        console.log('✅ Push API supported')
+        alert('Push API wird unterstützt!')
+      } else {
+        console.log('❌ Push API not supported')
+        alert('Push API wird nicht unterstützt!')
+      }
     } catch (error) {
-      console.error('❌ Test push failed:', error)
+      console.error('❌ Test failed:', error)
+      alert('Test fehlgeschlagen: ' + error)
     }
+  }
+
+  const checkStatus = () => {
+    const status = {
+      serviceWorker: 'serviceWorker' in navigator,
+      pushManager: 'PushManager' in window,
+      notification: 'Notification' in window,
+      permission: Notification.permission
+    }
+    
+    const statusText = `
+Push Status:
+- Service Worker: ${status.serviceWorker ? '✅' : '❌'}
+- Push Manager: ${status.pushManager ? '✅' : '❌'}
+- Notification: ${status.notification ? '✅' : '❌'}
+- Berechtigung: ${status.permission}
+    `
+    
+    alert(statusText)
+    console.log('Push Status:', status)
   }
 
   if (!isVisible) {
     return (
       <button
         onClick={() => setIsVisible(true)}
-        className="fixed bottom-4 right-4 bg-blue-600 text-white p-3 rounded-full shadow-lg z-50"
+        style={{
+          position: 'fixed',
+          bottom: '16px',
+          right: '16px',
+          backgroundColor: '#2563eb',
+          color: 'white',
+          padding: '12px',
+          borderRadius: '50%',
+          border: 'none',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          zIndex: 50,
+          cursor: 'pointer'
+        }}
         title="Debug Info"
       >
-        <Smartphone className="w-6 h-6" />
+        📱
       </button>
     )
   }
 
   return (
-    <div className="fixed bottom-4 right-4 bg-white border border-gray-300 rounded-lg shadow-lg p-4 w-72 z-50">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <Bell className="w-5 h-5" />
-          Push Debug
+    <div style={{
+      position: 'fixed',
+      bottom: '16px',
+      right: '16px',
+      backgroundColor: 'white',
+      border: '1px solid #d1d5db',
+      borderRadius: '8px',
+      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+      padding: '16px',
+      width: '280px',
+      zIndex: 50
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '16px'
+      }}>
+        <h3 style={{
+          fontSize: '18px',
+          fontWeight: '600',
+          margin: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          🔔 Push Debug
         </h3>
         <button
           onClick={() => setIsVisible(false)}
-          className="text-gray-500 hover:text-gray-700"
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#6b7280',
+            cursor: 'pointer',
+            fontSize: '20px'
+          }}
         >
-          <X className="w-5 h-5" />
+          ✕
         </button>
       </div>
 
-      <div className="space-y-3 text-sm">
-        <div>
-          <strong>Push unterstützt:</strong> {webPushService.isSupported() ? '✅' : '❌'}
-        </div>
-        <div>
-          <strong>Subscribed:</strong> {webPushService.isSubscribed() ? '✅' : '❌'}
-        </div>
-        <div>
-          <strong>Service Worker:</strong> {webPushService.isServiceWorkerReady() ? '✅' : '❌'}
-        </div>
-        <div>
-          <strong>Berechtigung:</strong> {Notification.permission}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <button
+          onClick={checkStatus}
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          Status prüfen
+        </button>
         
         <button
           onClick={testPush}
-          className="w-full px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          style={{
+            padding: '8px 12px',
+            backgroundColor: '#10b981',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
         >
-          Test Push senden
+          Test Push
         </button>
       </div>
     </div>
