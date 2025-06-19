@@ -4,7 +4,7 @@ export class WebPushService {
   private registration: ServiceWorkerRegistration | null = null
   private subscription: PushSubscription | null = null
   private isSupported = false
-  private vapidPublicKey = 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc'
+  private vapidPublicKey = 'BIpd-RJc_khB_YcNe0lkc6sgFyN5FI9QPvz68nFYICP30vxGg0upK4OZHfNcYwub2v-43wTF4pLlR6mlIjyBJk0'
 
   private constructor() {
     this.checkSupport()

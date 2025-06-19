@@ -2,7 +2,7 @@
 const CACHE_NAME = 'restaurant-app-v1'
 
 // VAPID Public Key - muss mit dem Server übereinstimmen
-const VAPID_PUBLIC_KEY = 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc'
+const VAPID_PUBLIC_KEY = 'BIpd-RJc_khB_YcNe0lkc6sgFyN5FI9QPvz68nFYICP30vxGg0upK4OZHfNcYwub2v-43wTF4pLlR6mlIjyBJk0'
 
 // Service Worker Installation
 self.addEventListener('install', (event) => {

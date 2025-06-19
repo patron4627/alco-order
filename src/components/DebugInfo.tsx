@@ -28,7 +28,7 @@ const DebugInfo: React.FC = () => {
         console.log('🔄 Creating new push subscription...')
         
         // VAPID Public Key
-        const vapidPublicKey = 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc'
+        const vapidPublicKey = 'BIpd-RJc_khB_YcNe0lkc6sgFyN5FI9QPvz68nFYICP30vxGg0upK4OZHfNcYwub2v-43wTF4pLlR6mlIjyBJk0'
         
         // VAPID Key zu Uint8Array konvertieren
         const urlBase64ToUint8Array = (base64String: string) => {

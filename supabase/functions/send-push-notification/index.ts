@@ -51,8 +51,8 @@ serve(async (req) => {
 
     // VAPID Keys - Diese sollten in den Supabase Secrets gespeichert werden
     const vapidKeys = {
-      publicKey: Deno.env.get('VAPID_PUBLIC_KEY') || 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc',
-      privateKey: Deno.env.get('VAPID_PRIVATE_KEY') || 'UUxI4O8-FbRouAevSmBQ6o18hgE4nSG3qwvJTfKc-ls'
+      publicKey: Deno.env.get('VAPID_PUBLIC_KEY') || 'BIpd-RJc_khB_YcNe0lkc6sgFyN5FI9QPvz68nFYICP30vxGg0upK4OZHfNcYwub2v-43wTF4pLlR6mlIjyBJk0',
+      privateKey: Deno.env.get('VAPID_PRIVATE_KEY') || 'RW4aMnC9I6hrXEIm56TRet8umDu6AIyUm0BnLZZvz9o'
     }
     
     console.log('🔑 Using VAPID keys:', { 
