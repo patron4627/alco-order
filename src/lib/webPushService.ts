@@ -285,28 +285,100 @@ export class WebPushService {
     totalAmount: number
     orderId: string
   }): Promise<boolean> {
-    return await this.sendPushNotification({
-      title: '🔔 Neue Bestellung eingegangen!',
-      body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
-      icon: '/icon-192x192.png',
-      tag: 'new-order-' + orderData.orderId,
-      data: { 
-        orderId: orderData.orderId, 
-        type: 'new-order',
-        url: '/admin'
-      },
-      actions: [
-        {
-          action: 'view',
-          title: 'Bestellung anzeigen',
-          icon: '/icon-192x192.png'
-        },
-        {
-          action: 'dismiss',
-          title: 'Schließen'
+    console.log('🔔 Attempting to send new order notification:', orderData)
+    
+    // Prüfe ob Subscription vorhanden ist
+    if (!this.subscription) {
+      console.warn('⚠️ No push subscription available, trying local notification')
+      
+      // Fallback: Lokale Benachrichtigung
+      if (Notification.permission === 'granted') {
+        try {
+          new Notification('🔔 Neue Bestellung eingegangen!', {
+            body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
+            icon: '/icon-192x192.png',
+            tag: 'new-order-' + orderData.orderId,
+            requireInteraction: true,
+            silent: false
+          })
+          console.log('✅ Local notification sent successfully')
+          return true
+        } catch (error) {
+          console.error('❌ Failed to send local notification:', error)
         }
-      ]
-    })
+      }
+      
+      return false
+    }
+    
+    // Versuche Push-Benachrichtigung zu senden
+    try {
+      const result = await this.sendPushNotification({
+        title: '🔔 Neue Bestellung eingegangen!',
+        body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
+        icon: '/icon-192x192.png',
+        tag: 'new-order-' + orderData.orderId,
+        data: { 
+          orderId: orderData.orderId, 
+          type: 'new-order',
+          url: '/admin'
+        },
+        actions: [
+          {
+            action: 'view',
+            title: 'Bestellung anzeigen',
+            icon: '/icon-192x192.png'
+          },
+          {
+            action: 'dismiss',
+            title: 'Schließen'
+          }
+        ]
+      })
+      
+      if (result) {
+        console.log('✅ Push notification sent successfully')
+        return true
+      } else {
+        console.warn('⚠️ Push notification failed, trying local notification')
+        
+        // Fallback: Lokale Benachrichtigung
+        if (Notification.permission === 'granted') {
+          new Notification('🔔 Neue Bestellung eingegangen!', {
+            body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
+            icon: '/icon-192x192.png',
+            tag: 'new-order-' + orderData.orderId,
+            requireInteraction: true,
+            silent: false
+          })
+          console.log('✅ Local notification sent as fallback')
+          return true
+        }
+      }
+      
+      return false
+    } catch (error) {
+      console.error('❌ Failed to send new order notification:', error)
+      
+      // Finaler Fallback: Lokale Benachrichtigung
+      if (Notification.permission === 'granted') {
+        try {
+          new Notification('🔔 Neue Bestellung eingegangen!', {
+            body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
+            icon: '/icon-192x192.png',
+            tag: 'new-order-' + orderData.orderId,
+            requireInteraction: true,
+            silent: false
+          })
+          console.log('✅ Local notification sent as final fallback')
+          return true
+        } catch (localError) {
+          console.error('❌ Failed to send local notification:', localError)
+        }
+      }
+      
+      return false
+    }
   }
 
   // Spezielle Methode für Bestellbestätigungen
@@ -344,6 +416,11 @@ export class WebPushService {
   // Service Worker Status prüfen
   isServiceWorkerReady(): boolean {
     return this.registration !== null && this.registration.active !== null
+  }
+
+  // Push API Support prüfen
+  getPushSupported(): boolean {
+    return this.isSupported
   }
 }
 

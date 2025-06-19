@@ -270,6 +270,24 @@ const AdminPage: React.FC = () => {
                 </button>
 
                 <button
+                  onClick={async () => {
+                    try {
+                      await webPushService.sendNewOrderNotification({
+                        customerName: 'Test Kunde',
+                        totalAmount: 15.50,
+                        orderId: 'test-' + Date.now()
+                      })
+                      console.log('✅ Test notification sent')
+                    } catch (error) {
+                      console.error('❌ Test notification failed:', error)
+                    }
+                  }}
+                  className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
+                >
+                  <span>🧪 Test Push</span>
+                </button>
+
+                <button
                   onClick={fetchOrders}
                   className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors text-sm"
                 >
