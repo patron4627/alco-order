@@ -4,7 +4,7 @@ import { CheckCircle, Clock, Phone, User, Home } from 'lucide-react'
 import { Order } from '../types'
 import { supabase } from '../lib/supabase'
 import OrderTimer from '../components/OrderTimer'
-import { pushNotificationService } from '../lib/pushNotifications'
+import { webPushService } from '../lib/webPushService'
 
 const OrderConfirmationPage: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>()
@@ -15,20 +15,20 @@ const OrderConfirmationPage: React.FC = () => {
 
   useEffect(() => {
     if (orderId) {
-      initializePushNotifications()
+      initializeWebPush()
       fetchOrder()
       setupRealtimeConnection()
     }
   }, [orderId])
 
-  const initializePushNotifications = async () => {
-    console.log('📱 Initializing push notifications for customer...')
+  const initializeWebPush = async () => {
+    console.log('📱 Initializing Web Push for customer...')
     
     try {
-      await pushNotificationService.initialize()
-      console.log('✅ Push notifications ready for customer')
+      await webPushService.initialize()
+      console.log('✅ Web Push ready for customer')
     } catch (error) {
-      console.error('❌ Failed to initialize push notifications:', error)
+      console.error('❌ Failed to initialize Web Push:', error)
     }
   }
 
@@ -70,8 +70,10 @@ const OrderConfirmationPage: React.FC = () => {
             console.log('✅ Order confirmed! Hiding timer...')
             setShowTimer(false)
             
-            // Push Notification für Bestätigung
-            await pushNotificationService.showOrderConfirmationNotification(orderId)
+            // Web Push Notification für Bestätigung
+            if (webPushService.isSubscribed()) {
+              await webPushService.sendOrderConfirmationNotification(orderId)
+            }
             
             // Bestätigungston
             playConfirmationSound()

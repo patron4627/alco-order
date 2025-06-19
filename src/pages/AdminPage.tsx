@@ -6,7 +6,7 @@ import OrderCard from '../components/OrderCard'
 import AdminLogin from '../components/AdminLogin'
 import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
-import { pushNotificationService } from '../lib/pushNotifications'
+import { webPushService } from '../lib/webPushService'
 
 const AdminPage: React.FC = () => {
   const { isAdminAuthenticated, logout } = useAuth()
@@ -17,49 +17,29 @@ const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting')
   const [pushEnabled, setPushEnabled] = useState(false)
-  const [permissionRequested, setPermissionRequested] = useState(false)
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
 
-    initializePushNotifications()
+    initializeWebPush()
     fetchOrders()
     setupRealtimeConnection()
   }, [isAdminAuthenticated])
 
-  const initializePushNotifications = async () => {
-    console.log('📱 Initializing push notifications for admin...')
+  const initializeWebPush = async () => {
+    console.log('📱 Initializing Web Push for admin...')
     
     try {
-      const success = await pushNotificationService.initialize()
+      const success = await webPushService.initialize()
       setPushEnabled(success)
       
       if (success) {
-        console.log('✅ Push notifications enabled for admin')
-        pushNotificationService.startKeepAlive()
+        console.log('✅ Web Push enabled for admin')
       } else {
-        console.log('❌ Push notifications not available')
+        console.log('❌ Web Push not available')
       }
     } catch (error) {
-      console.error('❌ Failed to initialize push notifications:', error)
-    }
-  }
-
-  const requestPermission = async () => {
-    if (permissionRequested) return
-    
-    try {
-      setPermissionRequested(true)
-      const success = await pushNotificationService.initialize()
-      setPushEnabled(success)
-      
-      if (success) {
-        console.log('✅ Permission granted')
-      } else {
-        console.log('❌ Permission denied')
-      }
-    } catch (error) {
-      console.error('❌ Error requesting permission:', error)
+      console.error('❌ Failed to initialize Web Push:', error)
     }
   }
 
@@ -103,9 +83,9 @@ const AdminPage: React.FC = () => {
               return [newOrder, ...prev]
             })
             
-            // Push Notification für neue Bestellung
+            // Web Push Notification für neue Bestellung
             if (pushEnabled) {
-              await pushNotificationService.showNewOrderNotification({
+              await webPushService.sendNewOrderNotification({
                 customerName: newOrder.customer_name,
                 totalAmount: newOrder.total_amount,
                 orderId: newOrder.id
@@ -274,23 +254,7 @@ const AdminPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      {/* Benachrichtigungs-Berechtigung */}
-      <div className="mb-4">
-        <button
-          onClick={requestPermission}
-          className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-          disabled={permissionRequested || pushEnabled}
-        >
-          <Bell className="mr-2" />
-          {pushEnabled ? 'Benachrichtigungen aktiviert' : 'Benachrichtigungen aktivieren'}
-        </button>
-        {!pushEnabled && permissionRequested && (
-          <p className="mt-2 text-sm text-gray-600">
-            Bitte erlauben Sie Benachrichtigungen in Ihrem Browser
-          </p>
-        )}
-      </div>
+    <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
           <div className="min-w-0 flex-1">
@@ -456,7 +420,7 @@ const AdminPage: React.FC = () => {
                 </p>
                 {pushEnabled && (
                   <p className="text-green-600 text-sm">
-                    📱 Push-Benachrichtigungen sind aktiv - Sie werden auch im Hintergrund benachrichtigt!
+                    📱 Web Push-Benachrichtigungen sind aktiv - Sie werden auch im Hintergrund benachrichtigt!
                   </p>
                 )}
               </div>

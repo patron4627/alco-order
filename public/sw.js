@@ -1,67 +1,14 @@
 // Service Worker für Push Notifications
-const CACHE_NAME = 'restaurant-app-v1';
-let errorCount = 0;
-const MAX_ERROR_RETRIES = 3;
+const CACHE_NAME = 'restaurant-app-v1'
+
+// VAPID Public Key - muss mit dem Server übereinstimmen
+const VAPID_PUBLIC_KEY = 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc'
 
 // Service Worker Installation
 self.addEventListener('install', (event) => {
-  console.log('🔧 Service Worker installing...');
-  self.skipWaiting();
-});
-
-// Fehlerbehandlung und Logging
-self.addEventListener('error', (event) => {
-  console.error('Service Worker Error:', event.error);
-  
-  // Fehler zählen
-  errorCount++;
-  
-  // Fehler-Tracking
-  fetch('/api/error', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      error: event.error.message,
-      timestamp: new Date().toISOString(),
-      errorCount,
-      type: 'service-worker-error'
-    })
-  });
-  
-  // Bei zu vielen Fehlern Service Worker neu starten
-  if (errorCount >= MAX_ERROR_RETRIES) {
-    console.error('Too many errors, restarting service worker...');
-    self.skipWaiting();
-    self.clients.claim();
-  }
-});
-
-// Performance Monitoring
-self.addEventListener('fetch', (event) => {
-  const startTime = Date.now();
-  
-  event.respondWith(
-    fetchWithTimeout(event.request).then(response => {
-      const duration = Date.now() - startTime;
-      
-      // Performance-Logging
-      if (duration > 2000) { // Über 2 Sekunden
-        console.warn(`Slow request: ${duration}ms for ${event.request.url}`);
-        fetch('/api/performance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: event.request.url,
-            duration,
-            timestamp: new Date().toISOString(),
-            type: 'slow-request'
-          })
-        });
-      }
-      return response;
-    })
-  );
-});
+  console.log('🔧 Service Worker installing...')
+  self.skipWaiting()
+})
 
 // Service Worker Aktivierung
 self.addEventListener('activate', (event) => {
@@ -69,7 +16,51 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
-// Push Notification Handler
+// Push Event Handler - Das ist der wichtigste Teil!
+self.addEventListener('push', (event) => {
+  console.log('📱 Push notification received:', event)
+  
+  let notificationData = {
+    title: 'Restaurant Benachrichtigung',
+    body: 'Sie haben eine neue Nachricht',
+    icon: '/icon-192x192.png',
+    badge: '/icon-192x192.png',
+    tag: 'restaurant-notification',
+    data: {},
+    actions: []
+  }
+
+  // Parse Push Data
+  if (event.data) {
+    try {
+      const pushData = event.data.json()
+      notificationData = { ...notificationData, ...pushData }
+    } catch (error) {
+      console.error('Error parsing push data:', error)
+      notificationData.body = event.data.text() || notificationData.body
+    }
+  }
+
+  // Zeige Notification
+  const notificationPromise = self.registration.showNotification(
+    notificationData.title,
+    {
+      body: notificationData.body,
+      icon: notificationData.icon,
+      badge: notificationData.badge,
+      tag: notificationData.tag,
+      data: notificationData.data,
+      actions: notificationData.actions,
+      requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200, 100, 200],
+      silent: false
+    }
+  )
+
+  event.waitUntil(notificationPromise)
+})
+
+// Notification Click Handler
 self.addEventListener('notificationclick', (event) => {
   console.log('📱 Notification clicked:', event.notification.data)
   
@@ -78,10 +69,13 @@ self.addEventListener('notificationclick', (event) => {
   const data = event.notification.data
   let url = '/'
   
+  // URL basierend auf Notification Type bestimmen
   if (data && data.type === 'new-order') {
     url = '/admin'
   } else if (data && data.type === 'order-confirmed' && data.orderId) {
     url = `/order-confirmation/${data.orderId}`
+  } else if (data && data.url) {
+    url = data.url
   }
   
   // App öffnen oder fokussieren
@@ -102,137 +96,10 @@ self.addEventListener('notificationclick', (event) => {
   )
 })
 
-// Push Handler für neue Benachrichtigungen
-self.addEventListener('push', (event) => {
-  console.log('⚡ Push event received')
-  
-  const data = event.data.json()
-  
-  // Wichtige Daten extrahieren
-  const title = data.title || 'Neue Bestellung'
-  const body = data.body || 'Eine neue Bestellung wurde aufgegeben'
-  const icon = data.icon || '/icon-192x192.png'
-  const badge = data.badge || '/icon-192x192.png'
-  const requireInteraction = data.requireInteraction || true
-  const vibrate = data.vibrate || [200, 100, 200, 100, 200]
-  const renotify = data.renotify || true
-  const silent = data.silent || false
-  const tag = data.tag || 'new-order'
-  const timestamp = data.timestamp || Date.now()
-  const orderId = data.orderId
-  const type = data.type || 'new-order'
-  
-  // Benachrichtigung anzeigen
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon,
-      badge,
-      requireInteraction,
-      vibrate,
-      actions: [
-        {
-          action: 'view',
-          title: 'Bestellung anzeigen',
-          icon: '/icon-192x192.png'
-        }
-      ],
-      renotify,
-      silent,
-      tag: `order-${orderId || Date.now()}`,
-      timestamp,
-      data: { orderId, type }
-    })
-  );
-});
-
-// Push-Subscription Change Handler
-self.addEventListener('pushsubscriptionchange', (event) => {
-  console.log('Push subscription changed, updating...');
-  event.waitUntil(
-    fetch('/api/update-subscription', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        subscription: event.newSubscription
-      })
-    })
-  );
-});
-
-// Helper für API-Timeouts
-const API_TIMEOUT = 30000; // 30 Sekunden Timeout
-
-function fetchWithTimeout(resource, options = {}) {
-  const { signal } = new AbortController();
-  const timeout = setTimeout(() => signal.abort(), API_TIMEOUT);
-  
-  return fetch(resource, {
-    ...options,
-    signal
-  }).finally(() => clearTimeout(timeout));
-}
-
-// Keep-Alive Mechanismus für Hintergrundaktivität
-let keepAliveTimer;
-
-function startKeepAlive() {
-  if (keepAliveTimer) {
-    clearTimeout(keepAliveTimer);
-  }
-  
-  keepAliveTimer = setTimeout(() => {
-    // Periodische Aktivität, um den Service Worker wach zu halten
-    self.registration.sync.register('keep-alive');
-    startKeepAlive(); // Wiederholen
-  }, 15 * 60 * 1000); // alle 15 Minuten
-}
-
-// Periodische Synchronisierung (wenn verfügbar)
-if ('periodicSync' in registration) {
-  try {
-    registration.periodicSync.register('periodic-sync', {
-      minInterval: 24 * 60 * 60 * 1000, // einmal pro Tag
-      powerState: 'auto',
-      networkState: 'any'
-    });
-  } catch (error) {
-    console.error('Periodic Sync nicht unterstützt:', error);
-  }
-}
-
-// Background Sync für spezifische Operationen
+// Background Sync für offline Funktionalität
 self.addEventListener('sync', (event) => {
-  if (event.tag === 'periodic-sync') {
-    // Periodische Synchronisierung
-    event.waitUntil(
-      syncData().catch(error => {
-        console.error('Synchronisierung fehlgeschlagen:', error);
-        // Versuche es später erneut
-        return self.registration.sync.register('periodic-sync');
-      })
-    );
-  }
-  
-  if (event.tag === 'keep-alive') {
-    // Keep-Alive Synchronisierung
-    event.waitUntil(
-      fetchWithTimeout('/api/keep-alive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-    );
-  }
-});
-
-// Starte Keep-Alive beim Service Worker Start
-self.addEventListener('activate', (event) => {
-  console.log('✅ Service Worker activated');
-  event.waitUntil(self.clients.claim());
-  startKeepAlive(); // Keep-Alive starten
-});
+  console.log('🔄 Background sync:', event.tag)
+})
 
 // Fetch Handler für Caching
 self.addEventListener('fetch', (event) => {
