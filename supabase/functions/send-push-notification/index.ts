@@ -129,12 +129,22 @@ serve(async (req) => {
 
     // Push Notification senden
     console.log(`📤 Sending to single subscription: ${subscription.endpoint.substring(0, 50)}...`)
+    
+    // Wichtig: Sende die Benachrichtigung als JSON-String für den Service Worker
+    const pushPayload = JSON.stringify(notificationPayload)
+    console.log('📤 Push payload:', pushPayload)
+    
     await webpush.sendNotification(
       subscription,
-      JSON.stringify(notificationPayload),
+      pushPayload,
       {
         urgency: 'high',
-        TTL: 60 * 60 * 24 // 24 Stunden
+        TTL: 60 * 60 * 24, // 24 Stunden
+        // Zusätzliche Header für bessere Kompatibilität
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Encoding': 'aes128gcm'
+        }
       }
     )
 

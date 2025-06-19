@@ -287,31 +287,31 @@ export class WebPushService {
   }): Promise<boolean> {
     console.log('🔔 Attempting to send new order notification:', orderData)
     
-    // Prüfe ob Subscription vorhanden ist
-    if (!this.subscription) {
-      console.warn('⚠️ No push subscription available, trying local notification')
-      
-      // Fallback: Lokale Benachrichtigung
-      if (Notification.permission === 'granted') {
-        try {
-          new Notification('🔔 Neue Bestellung eingegangen!', {
-            body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
-            icon: '/icon-192x192.png',
-            tag: 'new-order-' + orderData.orderId,
-            requireInteraction: true,
-            silent: false
-          })
-          console.log('✅ Local notification sent successfully')
-          return true
-        } catch (error) {
-          console.error('❌ Failed to send local notification:', error)
-        }
-      }
-      
+    // Stelle sicher, dass Service Worker aktiv ist
+    const serviceWorkerReady = await this.ensureServiceWorkerActive()
+    if (!serviceWorkerReady) {
+      console.error('❌ Service Worker not ready')
       return false
     }
     
-    // Versuche Push-Benachrichtigung zu senden
+    // Prüfe ob Subscription vorhanden ist
+    if (!this.subscription) {
+      console.warn('⚠️ No push subscription available, trying to create one...')
+      
+      // Versuche Subscription zu erstellen
+      try {
+        await this.createPushSubscription()
+        if (!this.subscription) {
+          console.error('❌ Failed to create push subscription')
+          return false
+        }
+      } catch (error) {
+        console.error('❌ Failed to create push subscription:', error)
+        return false
+      }
+    }
+    
+    // Versuche Push-Benachrichtigung zu senden (funktioniert auch im Hintergrund)
     try {
       const result = await this.sendPushNotification({
         title: '🔔 Neue Bestellung eingegangen!',
@@ -340,43 +340,12 @@ export class WebPushService {
         console.log('✅ Push notification sent successfully')
         return true
       } else {
-        console.warn('⚠️ Push notification failed, trying local notification')
-        
-        // Fallback: Lokale Benachrichtigung
-        if (Notification.permission === 'granted') {
-          new Notification('🔔 Neue Bestellung eingegangen!', {
-            body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
-            icon: '/icon-192x192.png',
-            tag: 'new-order-' + orderData.orderId,
-            requireInteraction: true,
-            silent: false
-          })
-          console.log('✅ Local notification sent as fallback')
-          return true
-        }
+        console.error('❌ Push notification failed')
+        return false
       }
       
-      return false
     } catch (error) {
       console.error('❌ Failed to send new order notification:', error)
-      
-      // Finaler Fallback: Lokale Benachrichtigung
-      if (Notification.permission === 'granted') {
-        try {
-          new Notification('🔔 Neue Bestellung eingegangen!', {
-            body: `${orderData.customerName} - ${orderData.totalAmount.toFixed(2)}€\nBestellung #${orderData.orderId.slice(-6)}`,
-            icon: '/icon-192x192.png',
-            tag: 'new-order-' + orderData.orderId,
-            requireInteraction: true,
-            silent: false
-          })
-          console.log('✅ Local notification sent as final fallback')
-          return true
-        } catch (localError) {
-          console.error('❌ Failed to send local notification:', localError)
-        }
-      }
-      
       return false
     }
   }
@@ -421,6 +390,35 @@ export class WebPushService {
   // Push API Support prüfen
   getPushSupported(): boolean {
     return this.isSupported
+  }
+
+  // Neue Methode: Service Worker Status prüfen und aktivieren
+  async ensureServiceWorkerActive(): Promise<boolean> {
+    try {
+      // Prüfe ob Service Worker bereits registriert ist
+      if (!this.registration) {
+        console.log('🔄 Service Worker not registered, initializing...')
+        return await this.initialize()
+      }
+
+      // Prüfe ob Service Worker aktiv ist
+      if (!this.registration.active) {
+        console.log('🔄 Service Worker not active, waiting...')
+        await this.waitForServiceWorker()
+      }
+
+      // Prüfe ob Service Worker bereit ist
+      if (this.registration.active && this.registration.active.state === 'activated') {
+        console.log('✅ Service Worker is active and ready')
+        return true
+      } else {
+        console.log('⚠️ Service Worker not ready, reinitializing...')
+        return await this.initialize()
+      }
+    } catch (error) {
+      console.error('❌ Failed to ensure service worker active:', error)
+      return false
+    }
   }
 }
 

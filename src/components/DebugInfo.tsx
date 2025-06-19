@@ -27,12 +27,29 @@ const DebugInfo: React.FC = () => {
       permission: Notification.permission
     }
     
+    // Prüfe Service Worker Status
+    let swStatus = 'Nicht verfügbar'
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then(registration => {
+        if (registration && registration.active) {
+          swStatus = 'Aktiv'
+        } else if (registration) {
+          swStatus = 'Registriert aber nicht aktiv'
+        } else {
+          swStatus = 'Nicht registriert'
+        }
+      }).catch(() => {
+        swStatus = 'Fehler beim Prüfen'
+      })
+    }
+    
     const statusText = `
 Push Status:
 - Service Worker: ${status.serviceWorker ? '✅' : '❌'}
 - Push Manager: ${status.pushManager ? '✅' : '❌'}
 - Notification: ${status.notification ? '✅' : '❌'}
 - Berechtigung: ${status.permission}
+- SW Status: ${swStatus}
     `
     
     alert(statusText)

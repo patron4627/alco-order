@@ -45,7 +45,7 @@ self.addEventListener('push', (event) => {
 
   console.log('📱 Final notification data:', notificationData)
 
-  // Zeige Notification
+  // Zeige Notification mit Ton
   const notificationPromise = self.registration.showNotification(
     notificationData.title,
     {
@@ -57,11 +57,13 @@ self.addEventListener('push', (event) => {
       actions: notificationData.actions,
       requireInteraction: true,
       vibrate: [200, 100, 200, 100, 200, 100, 200],
-      silent: false,
+      silent: false, // Wichtig: false für Ton
       // Zusätzliche Optionen für bessere Kompatibilität
       dir: 'ltr',
       lang: 'de',
-      renotify: true
+      renotify: true,
+      // Sound für verschiedene Browser
+      sound: '/notification-sound.mp3' // Optional: eigener Sound
     }
   )
 
