@@ -5,42 +5,72 @@ const DebugInfo: React.FC = () => {
 
   const testPush = async () => {
     try {
-      console.log('🧪 Testing push notification...')
+      console.log('🧪 Starting comprehensive push test...')
       
-      // Versuche Service Worker zu aktivieren
+      // 1. Service Worker Status prüfen
       if ('serviceWorker' in navigator) {
-        try {
-          const registration = await navigator.serviceWorker.register('/sw.js')
-          console.log('✅ Service Worker registered:', registration)
-          
-          // Warte bis Service Worker aktiv ist
-          if (registration.installing) {
-            await new Promise(resolve => {
-              registration.installing!.addEventListener('statechange', () => {
-                if (registration.installing!.state === 'activated') {
-                  resolve(true)
-                }
-              })
-            })
-          }
-          
-          console.log('✅ Service Worker activated')
-        } catch (error) {
-          console.error('❌ Failed to register service worker:', error)
+        const registration = await navigator.serviceWorker.getRegistration()
+        console.log('1. Service Worker Status:', registration?.active ? 'Aktiv' : 'Nicht aktiv')
+        
+        if (!registration?.active) {
+          alert('❌ Service Worker ist nicht aktiv!')
+          return
         }
       }
       
-      // Teste Push-API
-      if ('serviceWorker' in navigator && 'PushManager' in window) {
-        console.log('✅ Push API supported')
-        alert('Push API wird unterstützt! Service Worker sollte jetzt aktiv sein.')
-      } else {
-        console.log('❌ Push API not supported')
-        alert('Push API wird nicht unterstützt!')
+      // 2. Push-Subscription prüfen
+      const subscription = await navigator.serviceWorker.ready.then(registration => 
+        registration.pushManager.getSubscription()
+      )
+      console.log('2. Push Subscription:', subscription ? 'Vorhanden' : 'Nicht vorhanden')
+      
+      if (!subscription) {
+        alert('❌ Keine Push-Subscription vorhanden!')
+        return
       }
+      
+      // 3. Test-Push senden
+      console.log('3. Sende Test-Push...')
+      
+      // Direkt über die Edge Function testen
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-push-notification`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subscription: {
+            endpoint: subscription.endpoint,
+            keys: {
+              p256dh: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('p256dh')!))),
+              auth: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('auth')!)))
+            }
+          },
+          payload: {
+            title: '🧪 Test Push Benachrichtigung',
+            body: 'Dies ist eine Test-Push-Benachrichtigung mit Ton!',
+            icon: '/icon-192x192.png',
+            tag: 'test-notification',
+            data: { type: 'test' }
+          },
+          type: 'web-push'
+        })
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Test-Push erfolgreich gesendet:', result)
+        alert('✅ Test-Push erfolgreich gesendet! Schaue nach einer Benachrichtigung.')
+      } else {
+        const error = await response.text()
+        console.error('❌ Test-Push fehlgeschlagen:', error)
+        alert('❌ Test-Push fehlgeschlagen: ' + error)
+      }
+      
     } catch (error) {
       console.error('❌ Test failed:', error)
-      alert('Test fehlgeschlagen: ' + error)
+      alert('❌ Test fehlgeschlagen: ' + error)
     }
   }
 

@@ -1,5 +1,4 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,27 +49,6 @@ serve(async (req) => {
       )
     }
 
-    // Supabase Client für DB-Zugriff
-    let allSubscriptions = []
-    if (type === 'broadcast') {
-      if (!Deno.env.get('SUPABASE_URL') || !Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
-        console.error('❌ Supabase env missing')
-        return new Response(JSON.stringify({ error: 'Supabase env missing' }), { status: 500, headers: corsHeaders })
-      }
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      )
-      // Alle aktiven Subscriptions holen
-      const { data, error } = await supabase.from('push_subscriptions').select('*')
-      if (error) {
-        console.error('❌ Failed to fetch subscriptions:', error)
-        return new Response(JSON.stringify({ error: 'Failed to fetch subscriptions', details: error.message }), { status: 500, headers: corsHeaders })
-      }
-      allSubscriptions = data
-      console.log(`📋 Found ${allSubscriptions.length} subscriptions for broadcast`)
-    }
-
     // VAPID Keys - Diese sollten in den Supabase Secrets gespeichert werden
     const vapidKeys = {
       publicKey: Deno.env.get('VAPID_PUBLIC_KEY') || 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc',
@@ -98,39 +76,10 @@ serve(async (req) => {
 
     console.log('📱 Notification payload:', notificationPayload)
 
-    if (type === 'broadcast') {
-      // An alle Subscriptions schicken
-      let successCount = 0
-      let failCount = 0
-      for (const sub of allSubscriptions) {
-        try {
-          console.log(`📤 Sending to subscription: ${sub.endpoint.substring(0, 50)}...`)
-          await webpush.sendNotification(
-            {
-              endpoint: sub.endpoint,
-              keys: {
-                p256dh: sub.keys.p256dh,
-                auth: sub.keys.auth
-              }
-            },
-            JSON.stringify(notificationPayload),
-            { urgency: 'high', TTL: 60 * 60 * 24 }
-          )
-          successCount++
-          console.log(`✅ Successfully sent to subscription ${successCount}`)
-        } catch (err) {
-          failCount++
-          console.error(`❌ Failed to send to subscription ${failCount}:`, err)
-        }
-      }
-      console.log(`📊 Broadcast complete: ${successCount} success, ${failCount} failed`)
-      return new Response(JSON.stringify({ success: true, sent: successCount, failed: failCount }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
     // Push Notification senden
-    console.log(`📤 Sending to single subscription: ${subscription.endpoint.substring(0, 50)}...`)
+    console.log(`📤 Sending to subscription: ${subscription.endpoint.substring(0, 50)}...`)
     
-    // Wichtig: Sende die Benachrichtigung als JSON-String für den Service Worker
+    // Sende die Benachrichtigung als JSON-String für den Service Worker
     const pushPayload = JSON.stringify(notificationPayload)
     console.log('📤 Push payload:', pushPayload)
     
@@ -139,32 +88,11 @@ serve(async (req) => {
       pushPayload,
       {
         urgency: 'high',
-        TTL: 60 * 60 * 24, // 24 Stunden
-        // Zusätzliche Header für bessere Kompatibilität
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Encoding': 'aes128gcm'
-        }
+        TTL: 60 * 60 * 24 // 24 Stunden
       }
     )
 
     console.log('✅ Push notification sent successfully')
-
-    // Optional: Push Notification in Datenbank speichern
-    if (Deno.env.get('SUPABASE_URL') && Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      )
-
-      await supabase
-        .from('push_notifications')
-        .insert({
-          title: payload.title,
-          body: payload.body,
-          tag: payload.tag || 'restaurant-notification'
-        })
-    }
 
     return new Response(
       JSON.stringify({ success: true, message: 'Push notification sent successfully' }),
