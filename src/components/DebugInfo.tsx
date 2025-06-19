@@ -18,15 +18,71 @@ const DebugInfo: React.FC = () => {
         }
       }
       
-      // 2. Push-Subscription prüfen
-      const subscription = await navigator.serviceWorker.ready.then(registration => 
+      // 2. Push-Subscription prüfen und erstellen falls nötig
+      let subscription = await navigator.serviceWorker.ready.then(registration => 
         registration.pushManager.getSubscription()
       )
       console.log('2. Push Subscription:', subscription ? 'Vorhanden' : 'Nicht vorhanden')
       
       if (!subscription) {
-        alert('❌ Keine Push-Subscription vorhanden!')
-        return
+        console.log('🔄 Creating new push subscription...')
+        
+        // VAPID Public Key
+        const vapidPublicKey = 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc'
+        
+        // VAPID Key zu Uint8Array konvertieren
+        const urlBase64ToUint8Array = (base64String: string) => {
+          const padding = '='.repeat((4 - base64String.length % 4) % 4)
+          const base64 = (base64String + padding)
+            .replace(/-/g, '+')
+            .replace(/_/g, '/')
+
+          const rawData = window.atob(base64)
+          const outputArray = new Uint8Array(rawData.length)
+
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i)
+          }
+          return outputArray
+        }
+        
+        // Neue Subscription erstellen
+        const registration = await navigator.serviceWorker.ready
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+        })
+        
+        console.log('✅ New push subscription created:', subscription)
+        
+        // Subscription in Supabase speichern
+        try {
+          const subscriptionData = {
+            endpoint: subscription.endpoint,
+            keys: {
+              p256dh: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('p256dh')!))),
+              auth: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('auth')!)))
+            }
+          }
+          
+          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions`, {
+            method: 'POST',
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(subscriptionData)
+          })
+          
+          if (response.ok) {
+            console.log('✅ Subscription saved to Supabase')
+          } else {
+            console.error('❌ Failed to save subscription:', await response.text())
+          }
+        } catch (error) {
+          console.error('❌ Error saving subscription:', error)
+        }
       }
       
       // 3. Test-Push senden
@@ -41,10 +97,10 @@ const DebugInfo: React.FC = () => {
         },
         body: JSON.stringify({
           subscription: {
-            endpoint: subscription.endpoint,
+            endpoint: subscription!.endpoint,
             keys: {
-              p256dh: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('p256dh')!))),
-              auth: btoa(String.fromCharCode(...new Uint8Array(subscription.getKey('auth')!)))
+              p256dh: btoa(String.fromCharCode(...new Uint8Array(subscription!.getKey('p256dh')!))),
+              auth: btoa(String.fromCharCode(...new Uint8Array(subscription!.getKey('auth')!)))
             }
           },
           payload: {
