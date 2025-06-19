@@ -6,9 +6,34 @@ const DebugInfo: React.FC = () => {
   const testPush = async () => {
     try {
       console.log('🧪 Testing push notification...')
+      
+      // Versuche Service Worker zu aktivieren
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js')
+          console.log('✅ Service Worker registered:', registration)
+          
+          // Warte bis Service Worker aktiv ist
+          if (registration.installing) {
+            await new Promise(resolve => {
+              registration.installing!.addEventListener('statechange', () => {
+                if (registration.installing!.state === 'activated') {
+                  resolve(true)
+                }
+              })
+            })
+          }
+          
+          console.log('✅ Service Worker activated')
+        } catch (error) {
+          console.error('❌ Failed to register service worker:', error)
+        }
+      }
+      
+      // Teste Push-API
       if ('serviceWorker' in navigator && 'PushManager' in window) {
         console.log('✅ Push API supported')
-        alert('Push API wird unterstützt!')
+        alert('Push API wird unterstützt! Service Worker sollte jetzt aktiv sein.')
       } else {
         console.log('❌ Push API not supported')
         alert('Push API wird nicht unterstützt!')
@@ -19,7 +44,7 @@ const DebugInfo: React.FC = () => {
     }
   }
 
-  const checkStatus = () => {
+  const checkStatus = async () => {
     const status = {
       serviceWorker: 'serviceWorker' in navigator,
       pushManager: 'PushManager' in window,
@@ -27,10 +52,11 @@ const DebugInfo: React.FC = () => {
       permission: Notification.permission
     }
     
-    // Prüfe Service Worker Status
+    // Prüfe Service Worker Status synchron
     let swStatus = 'Nicht verfügbar'
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration().then(registration => {
+      try {
+        const registration = await navigator.serviceWorker.getRegistration()
         if (registration && registration.active) {
           swStatus = 'Aktiv'
         } else if (registration) {
@@ -38,9 +64,10 @@ const DebugInfo: React.FC = () => {
         } else {
           swStatus = 'Nicht registriert'
         }
-      }).catch(() => {
+      } catch (error) {
         swStatus = 'Fehler beim Prüfen'
-      })
+        console.error('SW Status check error:', error)
+      }
     }
     
     const statusText = `
@@ -53,7 +80,7 @@ Push Status:
     `
     
     alert(statusText)
-    console.log('Push Status:', status)
+    console.log('Push Status:', status, 'SW Status:', swStatus)
   }
 
   if (!isVisible) {

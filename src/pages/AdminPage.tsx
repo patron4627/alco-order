@@ -249,6 +249,7 @@ const AdminPage: React.FC = () => {
                   <span>SW: {'serviceWorker' in navigator ? '✅' : '❌'}</span>
                   <span>Push: {'PushManager' in window ? '✅' : '❌'}</span>
                   <span>Perm: {Notification.permission}</span>
+                  <span>SW-Active: {navigator.serviceWorker?.controller ? '✅' : '❌'}</span>
                 </div>
               </div>
             </div>
