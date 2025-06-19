@@ -19,6 +19,7 @@ self.addEventListener('activate', (event) => {
 // Push Event Handler - Das ist der wichtigste Teil!
 self.addEventListener('push', (event) => {
   console.log('📱 Push notification received:', event)
+  console.log('📱 Push data:', event.data)
   
   let notificationData = {
     title: 'Restaurant Benachrichtigung',
@@ -34,12 +35,15 @@ self.addEventListener('push', (event) => {
   if (event.data) {
     try {
       const pushData = event.data.json()
+      console.log('📱 Parsed push data:', pushData)
       notificationData = { ...notificationData, ...pushData }
     } catch (error) {
-      console.error('Error parsing push data:', error)
+      console.error('❌ Error parsing push data:', error)
       notificationData.body = event.data.text() || notificationData.body
     }
   }
+
+  console.log('📱 Final notification data:', notificationData)
 
   // Zeige Notification
   const notificationPromise = self.registration.showNotification(
@@ -53,7 +57,11 @@ self.addEventListener('push', (event) => {
       actions: notificationData.actions,
       requireInteraction: true,
       vibrate: [200, 100, 200, 100, 200, 100, 200],
-      silent: false
+      silent: false,
+      // Zusätzliche Optionen für bessere Kompatibilität
+      dir: 'ltr',
+      lang: 'de',
+      renotify: true
     }
   )
 
@@ -78,18 +86,22 @@ self.addEventListener('notificationclick', (event) => {
     url = data.url
   }
   
+  console.log('📱 Opening URL:', url)
+  
   // App öffnen oder fokussieren
   event.waitUntil(
     self.clients.matchAll({ type: 'window' }).then((clients) => {
       // Prüfe ob App bereits offen ist
       for (const client of clients) {
         if (client.url.includes(url) && 'focus' in client) {
+          console.log('📱 Focusing existing client')
           return client.focus()
         }
       }
       
       // Öffne neue App-Instanz
       if (self.clients.openWindow) {
+        console.log('📱 Opening new window')
         return self.clients.openWindow(url)
       }
     })

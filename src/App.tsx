@@ -8,6 +8,7 @@ import CartPage from './pages/CartPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderConfirmationPage from './pages/OrderConfirmationPage'
 import AdminPage from './pages/AdminPage'
+import DebugInfo from './components/DebugInfo'
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
               <Route path="/order-confirmation/:orderId" element={<OrderConfirmationPage />} />
               <Route path="/admin" element={<AdminPage />} />
             </Routes>
+            <DebugInfo />
           </div>
         </Router>
       </CartProvider>

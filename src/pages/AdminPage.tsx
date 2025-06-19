@@ -36,10 +36,14 @@ const AdminPage: React.FC = () => {
       if (success) {
         console.log('✅ Web Push enabled for admin')
       } else {
-        console.log('❌ Web Push not available')
+        console.log('❌ Web Push not available, but will still try to send notifications')
+        // Trotzdem versuchen, Push-Benachrichtigungen zu senden
+        setPushEnabled(true)
       }
     } catch (error) {
       console.error('❌ Failed to initialize Web Push:', error)
+      // Trotzdem versuchen, Push-Benachrichtigungen zu senden
+      setPushEnabled(true)
     }
   }
 
@@ -84,12 +88,15 @@ const AdminPage: React.FC = () => {
             })
             
             // Web Push Notification für neue Bestellung
-            if (pushEnabled) {
+            try {
               await webPushService.sendNewOrderNotification({
                 customerName: newOrder.customer_name,
                 totalAmount: newOrder.total_amount,
                 orderId: newOrder.id
               })
+              console.log('✅ Push notification sent for new order')
+            } catch (error) {
+              console.error('❌ Failed to send push notification:', error)
             }
             
           } else if (payload.eventType === 'UPDATE') {

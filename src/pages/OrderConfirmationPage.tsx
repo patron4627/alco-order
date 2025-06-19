@@ -71,8 +71,11 @@ const OrderConfirmationPage: React.FC = () => {
             setShowTimer(false)
             
             // Web Push Notification für Bestätigung
-            if (webPushService.isSubscribed()) {
+            try {
               await webPushService.sendOrderConfirmationNotification(orderId)
+              console.log('✅ Push notification sent for order confirmation')
+            } catch (error) {
+              console.error('❌ Failed to send push notification:', error)
             }
             
             // Bestätigungston
