@@ -148,7 +148,7 @@ export class WebPushService {
   private async sendSubscriptionToServer(): Promise<void> {
     if (!this.subscription) return;
     try {
-      // Subscription-Daten für Supabase vorbereiten
+      // Subscription-Daten für Supabase vorbereiten - nur die Felder die existieren
       const subscriptionData = {
         endpoint: this.subscription.endpoint,
         keys: {
