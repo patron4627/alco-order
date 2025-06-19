@@ -159,14 +159,38 @@ export class WebPushService {
       
       console.log('📤 Sending subscription to Supabase:', subscriptionData);
       
-      // Sende an Supabase REST API (Row Insert)
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions`, {
-        method: 'POST',
+      // First, check if subscription already exists
+      const checkResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(this.subscription.endpoint)}`,
+        {
+          method: 'GET',
+          headers: {
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      let isUpdate = false;
+      if (checkResponse.ok) {
+        const existingSubscriptions = await checkResponse.json();
+        isUpdate = existingSubscriptions.length > 0;
+        console.log(`📋 Found ${existingSubscriptions.length} existing subscription(s)`);
+      }
+      
+      // Use appropriate method based on whether subscription exists
+      const method = isUpdate ? 'PATCH' : 'POST';
+      const url = isUpdate 
+        ? `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(this.subscription.endpoint)}`
+        : `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions`;
+      
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'resolution=merge-duplicates'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(subscriptionData)
       });
@@ -187,12 +211,12 @@ export class WebPushService {
       if (responseText.trim()) {
         try {
           const responseJson = JSON.parse(responseText);
-          console.log('✅ Subscription successfully saved in Supabase:', responseJson);
+          console.log(`✅ Subscription successfully ${isUpdate ? 'updated' : 'saved'} in Supabase:`, responseJson);
         } catch (parseError) {
           console.warn('⚠️ Response is not valid JSON, but request was successful');
         }
       } else {
-        console.log('✅ Subscription successfully saved in Supabase (empty response)');
+        console.log(`✅ Subscription successfully ${isUpdate ? 'updated' : 'saved'} in Supabase (empty response)`);
       }
       
     } catch (error) {

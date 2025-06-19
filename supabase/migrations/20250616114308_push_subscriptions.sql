@@ -1,7 +1,7 @@
 -- Create push_subscriptions table
 CREATE TABLE IF NOT EXISTS public.push_subscriptions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    endpoint TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
     keys JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
@@ -48,4 +48,25 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON public.push_subscriptions
     FOR EACH ROW
-    EXECUTE FUNCTION public.handle_updated_at(); 
+    EXECUTE FUNCTION public.handle_updated_at();
+
+-- Create upsert function for push subscriptions
+CREATE OR REPLACE FUNCTION public.upsert_push_subscription(
+    p_endpoint TEXT,
+    p_keys JSONB
+)
+RETURNS UUID AS $$
+DECLARE
+    v_id UUID;
+BEGIN
+    INSERT INTO public.push_subscriptions (endpoint, keys)
+    VALUES (p_endpoint, p_keys)
+    ON CONFLICT (endpoint)
+    DO UPDATE SET
+        keys = EXCLUDED.keys,
+        updated_at = now()
+    RETURNING id INTO v_id;
+    
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER; 
