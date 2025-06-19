@@ -156,6 +156,9 @@ export class WebPushService {
           auth: btoa(String.fromCharCode(...new Uint8Array(this.subscription.getKey('auth')!)))
         }
       };
+      
+      console.log('📤 Sending subscription to Supabase:', subscriptionData);
+      
       // Sende an Supabase REST API (Row Insert)
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions`, {
         method: 'POST',
@@ -167,12 +170,34 @@ export class WebPushService {
         },
         body: JSON.stringify(subscriptionData)
       });
+      
+      console.log('📥 Response status:', response.status);
+      console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+      
       if (!response.ok) {
-        throw new Error('Failed to save subscription in Supabase');
+        const errorText = await response.text();
+        console.error('❌ Supabase error response:', errorText);
+        throw new Error(`Failed to save subscription in Supabase: ${response.status} ${response.statusText} - ${errorText}`);
       }
-      console.log('✅ Subscription erfolgreich in Supabase gespeichert');
+      
+      // Try to parse response as JSON if it has content
+      const responseText = await response.text();
+      console.log('📥 Response body:', responseText);
+      
+      if (responseText.trim()) {
+        try {
+          const responseJson = JSON.parse(responseText);
+          console.log('✅ Subscription successfully saved in Supabase:', responseJson);
+        } catch (parseError) {
+          console.warn('⚠️ Response is not valid JSON, but request was successful');
+        }
+      } else {
+        console.log('✅ Subscription successfully saved in Supabase (empty response)');
+      }
+      
     } catch (error) {
       console.error('❌ Failed to send subscription to server:', error);
+      throw error; // Re-throw to handle it in the calling function
     }
   }
 
