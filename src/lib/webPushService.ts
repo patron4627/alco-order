@@ -146,20 +146,33 @@ export class WebPushService {
   }
 
   private async sendSubscriptionToServer(): Promise<void> {
-    if (!this.subscription) return
-
+    if (!this.subscription) return;
     try {
-      // Hier könnten Sie die Subscription an Ihren Server senden
-      // um sie in der Datenbank zu speichern
-      console.log('📤 Subscription ready for server:', {
+      // Subscription-Daten für Supabase vorbereiten
+      const subscriptionData = {
         endpoint: this.subscription.endpoint,
         keys: {
           p256dh: btoa(String.fromCharCode(...new Uint8Array(this.subscription.getKey('p256dh')!))),
           auth: btoa(String.fromCharCode(...new Uint8Array(this.subscription.getKey('auth')!)))
         }
-      })
+      };
+      // Sende an Supabase REST API (Row Insert)
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/push_subscriptions`, {
+        method: 'POST',
+        headers: {
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(subscriptionData)
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save subscription in Supabase');
+      }
+      console.log('✅ Subscription erfolgreich in Supabase gespeichert');
     } catch (error) {
-      console.error('❌ Failed to send subscription to server:', error)
+      console.error('❌ Failed to send subscription to server:', error);
     }
   }
 

@@ -92,11 +92,6 @@ const AdminPage: React.FC = () => {
               })
             }
             
-            // Zusätzlicher Sound wenn Audio aktiviert
-            if (audioEnabled) {
-              playUrgentNotificationSound()
-            }
-            
           } else if (payload.eventType === 'UPDATE') {
             const updatedOrder = payload.new as Order
             console.log('🔄 Order updated:', updatedOrder.id, updatedOrder.status)
@@ -165,40 +160,6 @@ const AdminPage: React.FC = () => {
       setConnectionStatus('disconnected')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const playUrgentNotificationSound = () => {
-    try {
-      // Sehr laute und dringende Benachrichtigungssequenz für Restaurant
-      const playTone = (frequency: number, duration: number, delay: number = 0, volume: number = 0.8) => {
-        setTimeout(() => {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-          const oscillator = audioContext.createOscillator()
-          const gainNode = audioContext.createGain()
-          
-          oscillator.connect(gainNode)
-          gainNode.connect(audioContext.destination)
-          
-          oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime)
-          gainNode.gain.setValueAtTime(volume, audioContext.currentTime)
-          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration)
-          
-          oscillator.start(audioContext.currentTime)
-          oscillator.stop(audioContext.currentTime + duration)
-        }, delay)
-      }
-      
-      // Sehr laute und dringende Sequenz: 6 Töne mit hoher Lautstärke
-      playTone(1000, 0.3, 0, 0.9)      // Sehr laut
-      playTone(1200, 0.3, 400, 0.9)    // Sehr laut
-      playTone(1000, 0.3, 800, 0.9)    // Sehr laut
-      playTone(1400, 0.3, 1200, 0.9)   // Sehr laut
-      playTone(1000, 0.4, 1600, 0.9)   // Sehr laut und länger
-      playTone(1200, 0.4, 2100, 0.9)   // Sehr laut und länger
-      
-    } catch (error) {
-      console.log('Could not play notification sound:', error)
     }
   }
 

@@ -48,20 +48,31 @@ serve(async (req) => {
       )
     }
 
+    // Supabase Client für DB-Zugriff
+    let allSubscriptions = []
+    if (type === 'broadcast') {
+      if (!Deno.env.get('SUPABASE_URL') || !Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+        return new Response(JSON.stringify({ error: 'Supabase env missing' }), { status: 500, headers: corsHeaders })
+      }
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      )
+      // Alle aktiven Subscriptions holen
+      const { data, error } = await supabase.from('push_subscriptions').select('*')
+      if (error) {
+        return new Response(JSON.stringify({ error: 'Failed to fetch subscriptions', details: error.message }), { status: 500, headers: corsHeaders })
+      }
+      allSubscriptions = data
+    }
+
     // VAPID Keys - Diese sollten in den Supabase Secrets gespeichert werden
     const vapidKeys = {
       publicKey: Deno.env.get('VAPID_PUBLIC_KEY') || 'BEl62iUYgUivxIkv69yViEuiBIa40HI8DLLiAKsHaNNBIiE-qP8zrtJxAKNLXxFHBMCOShmkiMY_wSdxsp1VvQc',
       privateKey: Deno.env.get('VAPID_PRIVATE_KEY') || 'UUxI4O8-FbRouAevSmBQ6o18hgE4nSG3qwvJTfKc-ls'
     }
-
-    // Web Push senden
     const webpush = await import('npm:web-push@3.6.7')
-    
-    webpush.setVapidDetails(
-      'mailto:admin@restaurant.com',
-      vapidKeys.publicKey,
-      vapidKeys.privateKey
-    )
+    webpush.setVapidDetails('mailto:admin@restaurant.com', vapidKeys.publicKey, vapidKeys.privateKey)
 
     // Notification Payload erstellen
     const notificationPayload: NotificationPayload = {
@@ -72,6 +83,31 @@ serve(async (req) => {
       tag: payload.tag || 'restaurant-notification',
       data: payload.data || {},
       actions: payload.actions || []
+    }
+
+    if (type === 'broadcast') {
+      // An alle Subscriptions schicken
+      let successCount = 0
+      let failCount = 0
+      for (const sub of allSubscriptions) {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.keys.p256dh,
+                auth: sub.keys.auth
+              }
+            },
+            JSON.stringify(notificationPayload),
+            { urgency: 'high', TTL: 60 * 60 * 24 }
+          )
+          successCount++
+        } catch (err) {
+          failCount++
+        }
+      }
+      return new Response(JSON.stringify({ success: true, sent: successCount, failed: failCount }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     // Push Notification senden
