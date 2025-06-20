@@ -110,6 +110,34 @@ self.addEventListener('notificationclick', (event) => {
   )
 })
 
+// Message Handler für lokale Tests
+self.addEventListener('message', (event) => {
+  console.log('📱 Message received in service worker:', event.data)
+  
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    console.log('📱 Showing local test notification')
+    
+    const notificationData = event.data.notification
+    
+    self.registration.showNotification(
+      notificationData.title,
+      {
+        body: notificationData.body,
+        icon: notificationData.icon,
+        badge: '/icon-192x192.png',
+        tag: notificationData.tag,
+        data: notificationData.data,
+        requireInteraction: true,
+        vibrate: [200, 100, 200, 100, 200, 100, 200],
+        silent: false, // Wichtig: false für Ton
+        dir: 'ltr',
+        lang: 'de',
+        renotify: true
+      }
+    )
+  }
+})
+
 // Background Sync für offline Funktionalität
 self.addEventListener('sync', (event) => {
   console.log('🔄 Background sync:', event.tag)
