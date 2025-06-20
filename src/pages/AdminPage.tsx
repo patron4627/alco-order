@@ -7,6 +7,8 @@ import AdminLogin from '../components/AdminLogin'
 import MenuManagement from '../components/MenuManagement'
 import { useAuth } from '../context/AuthContext'
 import { webPushService } from '../lib/webPushService'
+import DebugInfo from '../components/DebugInfo'
+import DebugPanel from '../components/DebugPanel'
 
 const AdminPage: React.FC = () => {
   const { isAdminAuthenticated, logout } = useAuth()
@@ -17,6 +19,7 @@ const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu'>('orders')
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting')
   const [pushEnabled, setPushEnabled] = useState(false)
+  const [debugVisible, setDebugVisible] = useState(false)
 
   useEffect(() => {
     if (!isAdminAuthenticated) return
@@ -243,14 +246,13 @@ const AdminPage: React.FC = () => {
                   </div>
                 )}
                 
-                {/* Debug Info */}
-                <div className="flex items-center space-x-1 text-sm text-blue-600">
-                  <span>🔧 Debug:</span>
-                  <span>SW: {'serviceWorker' in navigator ? '✅' : '❌'}</span>
-                  <span>Push: {'PushManager' in window ? '✅' : '❌'}</span>
-                  <span>Perm: {Notification.permission}</span>
-                  <span>SW-Active: {navigator.serviceWorker?.controller ? '✅' : '❌'}</span>
-                </div>
+                {/* Debug Info (nur im Debug-Modus sichtbar) */}
+                {debugVisible && (
+                  <>
+                    <DebugInfo />
+                    <DebugPanel />
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -434,6 +436,18 @@ const AdminPage: React.FC = () => {
         ) : (
           <MenuManagement />
         )}
+
+        {/* Footer mit Debug-Button */}
+        <footer className="w-full fixed bottom-0 left-0 bg-transparent flex justify-end pr-4 pb-4 z-40 pointer-events-none">
+          <button
+            onClick={() => setDebugVisible((v) => !v)}
+            className={`pointer-events-auto flex items-center justify-center w-10 h-10 rounded-full bg-gray-300 hover:bg-blue-500 text-gray-600 hover:text-white shadow-sm transition-colors text-lg focus:outline-none focus:ring-2 focus:ring-blue-400 ${debugVisible ? 'bg-blue-500 text-white' : ''}`}
+            style={{ boxShadow: '0 2px 6px rgba(0,0,0,0.08)' }}
+            title="Debug-Modus umschalten"
+          >
+            🐞
+          </button>
+        </footer>
       </div>
     </div>
   )
