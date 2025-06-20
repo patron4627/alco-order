@@ -92,19 +92,31 @@ const MenuManagement: React.FC = () => {
 
       if (editingItem) {
         // Update existing item
+        console.log('Update-Request:', {
+          name: itemData.name,
+          description: itemData.description,
+          price: itemData.price,
+          category: itemData.category,
+          image_url: itemData.image_url || null,
+          available: !!itemData.available,
+          options: itemData.options && itemData.options.length > 0 ? [...itemData.options] : null
+        });
         const { error } = await supabase
           .from('menu_items')
           .update({
-            id: editingItem.id,
-            ...itemData,
-            options: itemData.options && itemData.options.length > 0 ? itemData.options : null
+            name: itemData.name,
+            description: itemData.description,
+            price: itemData.price,
+            category: itemData.category,
+            image_url: itemData.image_url || null,
+            available: !!itemData.available,
+            options: itemData.options && itemData.options.length > 0 ? [...itemData.options] : null
           })
-          .eq('id', editingItem.id)
-
-        console.log('Update error:', error)
+          .eq('id', editingItem.id);
+        console.log('Update-Response:', error);
         
         if (error) {
-          alert('Fehler beim Speichern der Optionen: ' + error.message)
+          alert('Fehler beim Speichern der Optionen: ' + error.message);
           throw error;
         }
         
