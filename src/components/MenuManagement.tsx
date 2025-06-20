@@ -95,16 +95,20 @@ const MenuManagement: React.FC = () => {
         const { error } = await supabase
           .from('menu_items')
           .update({
+            id: editingItem.id,
             ...itemData,
-            options: itemData.options && itemData.options.length > 0 ? itemData.options : null // explizit null wenn leer
+            options: itemData.options && itemData.options.length > 0 ? itemData.options : null
           })
           .eq('id', editingItem.id)
 
-        if (error) throw error
+        console.log('Update error:', error)
         
-        setMenuItems(prev => prev.map(item => 
-          item.id === editingItem.id ? { ...item, ...itemData } : item
-        ))
+        if (error) {
+          alert('Fehler beim Speichern der Optionen: ' + error.message)
+          throw error;
+        }
+        
+        setMenuItems((prev: MenuItem[]) => prev.map((item: MenuItem) => item.id === editingItem.id ? { ...item, ...itemData } : item))
       } else {
         // Add new item
         const { data, error } = await supabase
@@ -115,11 +119,11 @@ const MenuManagement: React.FC = () => {
 
         if (error) throw error
         
-        setMenuItems(prev => [...prev, data])
+        setMenuItems((prev: MenuItem[]) => [...prev, data])
         
         // Update categories if new category
         if (!categories.includes(itemData.category)) {
-          setCategories(prev => [...prev, itemData.category])
+          setCategories((prev: string[]) => [...prev, itemData.category])
         }
       }
 
@@ -155,7 +159,7 @@ const MenuManagement: React.FC = () => {
 
       if (error) throw error
       
-      setMenuItems(prev => prev.filter(item => item.id !== id))
+      setMenuItems((prev: MenuItem[]) => prev.filter((item: MenuItem) => item.id !== id))
     } catch (error) {
       console.error('Error deleting menu item:', error)
       alert('Fehler beim Löschen des Artikels')
@@ -185,9 +189,7 @@ const MenuManagement: React.FC = () => {
 
       if (error) throw error
       
-      setMenuItems(prev => prev.map(item => 
-        item.id === id ? { ...item, available: !available } : item
-      ))
+      setMenuItems((prev: MenuItem[]) => prev.map((item: MenuItem) => item.id === id ? { ...item, available: !available } : item))
     } catch (error) {
       console.error('Error updating availability:', error)
     }

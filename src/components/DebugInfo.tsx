@@ -1,7 +1,11 @@
 import React, { useState } from 'react'
 
-const DebugInfo: React.FC = () => {
-  const [isVisible, setIsVisible] = useState(false)
+interface DebugInfoProps {
+  visible: boolean;
+}
+
+const DebugInfo: React.FC<DebugInfoProps> = ({ visible }) => {
+  if (!visible) return null;
 
   const testPush = async () => {
     try {
@@ -178,30 +182,6 @@ Push Status:
     console.log('Push Status:', status, 'SW Status:', swStatus)
   }
 
-  if (!isVisible) {
-    return (
-      <button
-        onClick={() => setIsVisible(true)}
-        style={{
-          position: 'fixed',
-          bottom: '16px',
-          right: '16px',
-          backgroundColor: '#2563eb',
-          color: 'white',
-          padding: '12px',
-          borderRadius: '50%',
-          border: 'none',
-          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-          zIndex: 50,
-          cursor: 'pointer'
-        }}
-        title="Debug Info"
-      >
-        📱
-      </button>
-    )
-  }
-
   return (
     <div style={{
       position: 'fixed',
@@ -231,18 +211,6 @@ Push Status:
         }}>
           🔔 Push Debug
         </h3>
-        <button
-          onClick={() => setIsVisible(false)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#6b7280',
-            cursor: 'pointer',
-            fontSize: '20px'
-          }}
-        >
-          ✕
-        </button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

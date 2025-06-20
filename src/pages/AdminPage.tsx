@@ -249,7 +249,7 @@ const AdminPage: React.FC = () => {
                 {/* Debug Info (nur im Debug-Modus sichtbar) */}
                 {debugVisible && (
                   <>
-                    <DebugInfo />
+                    <DebugInfo visible={true} />
                     <DebugPanel />
                     <div className="flex items-center space-x-1 text-sm text-blue-600">
                       <span>🔧 Debug:</span>
