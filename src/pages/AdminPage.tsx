@@ -251,6 +251,13 @@ const AdminPage: React.FC = () => {
                   <>
                     <DebugInfo />
                     <DebugPanel />
+                    <div className="flex items-center space-x-1 text-sm text-blue-600">
+                      <span>🔧 Debug:</span>
+                      <span>SW: {'serviceWorker' in navigator ? '✅' : '❌'}</span>
+                      <span>Push: {'PushManager' in window ? '✅' : '❌'}</span>
+                      <span>Perm: {Notification.permission}</span>
+                      <span>SW-Active: {navigator.serviceWorker?.controller ? '✅' : '❌'}</span>
+                    </div>
                   </>
                 )}
               </div>
@@ -272,23 +279,26 @@ const AdminPage: React.FC = () => {
                   <span className="hidden sm:inline">{audioEnabled ? '🔊 Ton an' : '🔇 Ton aus'}</span>
                 </button>
 
-                <button
-                  onClick={async () => {
-                    try {
-                      await webPushService.sendNewOrderNotification({
-                        customerName: 'Test Kunde',
-                        totalAmount: 15.50,
-                        orderId: 'test-' + Date.now()
-                      })
-                      console.log('✅ Test notification sent')
-                    } catch (error) {
-                      console.error('❌ Test notification failed:', error)
-                    }
-                  }}
-                  className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
-                >
-                  <span>🧪 Test Push</span>
-                </button>
+                {/* Test Push Button nur im Debug-Modus sichtbar */}
+                {debugVisible && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await webPushService.sendNewOrderNotification({
+                          customerName: 'Test Kunde',
+                          totalAmount: 15.50,
+                          orderId: 'test-' + Date.now()
+                        })
+                        console.log('✅ Test notification sent')
+                      } catch (error) {
+                        console.error('❌ Test notification failed:', error)
+                      }
+                    }}
+                    className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
+                  >
+                    <span>🧪 Test Push</span>
+                  </button>
+                )}
 
                 <button
                   onClick={fetchOrders}

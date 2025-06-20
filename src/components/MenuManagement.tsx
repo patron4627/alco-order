@@ -94,7 +94,10 @@ const MenuManagement: React.FC = () => {
         // Update existing item
         const { error } = await supabase
           .from('menu_items')
-          .update(itemData)
+          .update({
+            ...itemData,
+            options: itemData.options && itemData.options.length > 0 ? itemData.options : null // explizit null wenn leer
+          })
           .eq('id', editingItem.id)
 
         if (error) throw error
