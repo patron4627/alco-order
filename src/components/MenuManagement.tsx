@@ -9,6 +9,7 @@ const MenuManagement: React.FC = () => {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [categories, setCategories] = useState<string[]>([])
+  const [availableImages, setAvailableImages] = useState<string[]>([])
 
   const [formData, setFormData] = useState({
     name: '',
@@ -22,6 +23,16 @@ const MenuManagement: React.FC = () => {
 
   useEffect(() => {
     fetchMenuItems()
+  }, [])
+
+  useEffect(() => {
+    // Liste der Bilder im public/images Ordner (manuell pflegen oder per Build-Script generieren)
+    setAvailableImages([
+      '/images/bild1.jpg',
+      '/images/bild2.jpg',
+      '/images/bild3.jpg',
+      // ... weitere Bilder ...
+    ])
   }, [])
 
   const fetchMenuItems = async () => {
@@ -319,16 +330,22 @@ const MenuManagement: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bild-URL (optional)
+                  Bild auswählen
                 </label>
-                <input
-                  type="url"
+                <select
                   name="image_url"
                   value={formData.image_url}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  placeholder="https://example.com/image.jpg"
-                />
+                >
+                  <option value="">Kein Bild</option>
+                  {availableImages.map((img) => (
+                    <option key={img} value={img}>{img.replace('/images/', '')}</option>
+                  ))}
+                </select>
+                {formData.image_url && (
+                  <img src={formData.image_url} alt="Vorschau" className="mt-2 h-24 rounded shadow" />
+                )}
               </div>
             </div>
 
