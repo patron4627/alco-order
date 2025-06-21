@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Save, X, Upload } from 'lucide-react'
 import { MenuItem, MenuOption } from '../types'
 import { supabase } from '../lib/supabase'
+import imagesList from '../images.json'
 
 const MenuManagement: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
@@ -26,13 +27,8 @@ const MenuManagement: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    // Liste der Bilder im public/images Ordner (manuell pflegen oder per Build-Script generieren)
-    setAvailableImages([
-      '/images/bild1.jpg',
-      '/images/bild2.jpg',
-      '/images/bild3.jpg',
-      // ... weitere Bilder ...
-    ])
+    // Lade die Bilder aus der images.json Datei
+    setAvailableImages(imagesList)
   }, [])
 
   const fetchMenuItems = async () => {
